@@ -113,6 +113,8 @@ func TestIngres(t *testing.T) {
 		if err == nil {
 			t.Fatal("nil error unexpected")
 		}
+		AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
+		AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
 
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)

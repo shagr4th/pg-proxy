@@ -16,7 +16,42 @@ func IngresTranslator() SqlTranslator {
 }
 
 func (v *ingresTranslator) Polyfill() (string, string) {
-	return `SELECT 'a'+'b' /*NOTRANSLATION*/`, `CREATE OPERATOR + (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat) /*NOTRANSLATION*/`
+	return `SELECT 'a'+'b' /*NOTRANSLATION*/`, `/*NOTRANSLATION*/
+-- OPERATEURS GERANT LE SYMBOLE '+' AVEC DES CHAINES DE CARACTERES
+
+-- avec un TEXT
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);
+
+-- avec un INTEGER
+CREATE OR REPLACE FUNCTION public.add_integer_text (integer, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = integer, RIGHTARG = text, FUNCTION = public.add_integer_text);
+CREATE OR REPLACE FUNCTION public.add_text_integer (text, integer) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = integer, FUNCTION = public.add_text_integer);
+
+-- avec un SMALLINT
+CREATE OR REPLACE FUNCTION public.add_smallint_text (smallint, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = smallint, RIGHTARG = text, FUNCTION = public.add_smallint_text);
+CREATE OR REPLACE FUNCTION public.add_text_smallint (text, smallint) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = smallint, FUNCTION = public.add_text_smallint);
+
+-- avec un BIGINT
+CREATE OR REPLACE FUNCTION public.add_bigint_text (bigint, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = bigint, RIGHTARG = text, FUNCTION = public.add_bigint_text);
+CREATE OR REPLACE FUNCTION public.add_text_bigint (text, bigint) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = bigint, FUNCTION = public.add_text_bigint);
+
+-- avec un REAL
+CREATE OR REPLACE FUNCTION public.add_real_text (real, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = real, RIGHTARG = text, FUNCTION = public.add_real_text);
+CREATE OR REPLACE FUNCTION public.add_text_real (text, real) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = real, FUNCTION = public.add_text_real);
+
+-- avec un NUMERIC
+CREATE OR REPLACE FUNCTION public.add_numeric_text (numeric, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = numeric, RIGHTARG = text, FUNCTION = public.add_numeric_text);
+CREATE OR REPLACE FUNCTION public.add_text_numeric (text, numeric) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = numeric, FUNCTION = public.add_text_numeric);
+`
 }
 
 func (v *ingresTranslator) RenameColumn(index int, column string) (string, error) {
