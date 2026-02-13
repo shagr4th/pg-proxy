@@ -1,4 +1,4 @@
-module schenker/pg-compat
+module schenker/pg-proxy
 
 go 1.25.3
 
