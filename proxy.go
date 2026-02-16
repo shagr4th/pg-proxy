@@ -35,7 +35,8 @@ type ProxyConfig struct {
 	Polyfilled        bool
 	StartupParameters map[string]string
 	SqlTranslator
-	PolyfillLock *sync.RWMutex
+	polyfillLock     *sync.RWMutex
+	latestQueryError sync.Map
 }
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -77,34 +78,38 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 }
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
+	config.latestQueryError.Delete(ctx)
 	start := time.Now()
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
+	if err != nil {
+		config.latestQueryError.Store(ctx, err)
+	}
 	if parsed == nil || !parsed.Transformed {
-		return msg, err
+		return msg, nil
 	}
 	msg.QueryString = parsed.Sql() + fmt.Sprintf(" --translated in %d µs from:\n-- ", time.Since(start).Microseconds()) +
 		strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
 	if config.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 	}
-	return msg, err
+	return msg, nil
 }
 
 func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
-	parseMsg, err := config.handleParse(ctx, &message.Parse{
+	parseMsg, _ := config.handleParse(ctx, &message.Parse{
 		QueryString: msg.QueryString,
 	})
 	if parseMsg != nil {
 		msg.QueryString = parseMsg.QueryString
 	}
-	return msg, err
+	return msg, nil
 }
 
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
 	if config.Polyfilled {
 		return msg, nil
 	}
-	config.PolyfillLock.Lock()
+	config.polyfillLock.Lock()
 	start := time.Now()
 	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
 	if createPolyfill == "" {
@@ -164,7 +169,7 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 		}
 	}
 	config.Polyfilled = true
-	config.PolyfillLock.Unlock()
+	config.polyfillLock.Unlock()
 	return msg, nil
 }
 
@@ -195,15 +200,27 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 }
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
+	queryErrorObject, queryErrorLoaded := config.latestQueryError.LoadAndDelete(ctx)
 	if config.Verbose == 0 {
 		return msg, nil
 	}
 	var errorMessage string
 	var errorCode string
-	for _, err := range msg.Fields {
+	for i, err := range msg.Fields {
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
+			if queryErrorLoaded {
+				queryError, ok := queryErrorObject.(error)
+				if ok {
+					errorMessage = fmt.Sprintf("pg-proxy error: %v (postgres error: %s)", queryError, errorMessage)
+					newFields := append(msg.Fields[0:i], message.ErrorField{
+						Type:  err.Type,
+						Value: errorMessage,
+					})
+					msg.Fields = append(newFields, msg.Fields[i+1:]...)
+				}
+			}
 		case 67:
 			errorCode = err.Value
 		}
@@ -302,8 +319,8 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
 	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 
-	if config.PolyfillLock == nil {
-		config.PolyfillLock = &sync.RWMutex{}
+	if config.polyfillLock == nil {
+		config.polyfillLock = &sync.RWMutex{}
 	}
 	return &proxy.Server{
 		TLSConfig:                tlsConfig,

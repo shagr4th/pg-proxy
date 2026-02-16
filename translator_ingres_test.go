@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func TestIngres(t *testing.T) {
 
 	proxyConfig := &ProxyConfig{
 		SqlTranslator:   translator,
-		Verbose:         0,
+		Verbose:         1,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParameters: map[string]string{
 			"datestyle": "iso,us", // forcage du datestyle pour simuler le date_format=US par défaut dans la base Ingres
@@ -105,8 +106,8 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT 'a' + @1", []string{"ab"}, "b")
 		AssertSqlQuery(t, db, "SELECT 'a' + :1", []string{"ab"}, "b")
 		_, err = Query[string](db, "SELECT 'a' + :name", sql.Named("name", "b"))
-		if err == nil {
-			t.Fatal("nil error unexpected")
+		if err == nil || !strings.Contains(err.Error(), `pg-proxy error: named parameter 'name' not supported in postgres: strconv.Atoi: parsing "name": invalid syntax`) {
+			t.Fatal("Unexpected nil or wrong error: " + err.Error())
 		}
 		AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
 		AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
