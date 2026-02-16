@@ -85,6 +85,9 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		config.latestQueryError.Store(ctx, err)
 	}
 	if parsed == nil || !parsed.Transformed {
+		if err == nil && config.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
+		}
 		return msg, nil
 	}
 	msg.QueryString = parsed.Sql() + fmt.Sprintf(" --translated in %d µs from:\n-- ", time.Since(start).Microseconds()) +
@@ -201,7 +204,7 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
 	queryErrorObject, queryErrorLoaded := config.latestQueryError.LoadAndDelete(ctx)
-	if config.Verbose == 0 {
+	if config.Verbose == 0 && !queryErrorLoaded {
 		return msg, nil
 	}
 	var errorMessage string
@@ -225,7 +228,7 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			errorCode = err.Value
 		}
 	}
-	if len(errorMessage) > 0 {
+	if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
 		log.Printf("ERROR [%s] %s (%s)\n", config.clientInfo(ctx), errorMessage, errorCode)
 	}
 	return msg, nil

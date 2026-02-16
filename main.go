@@ -36,7 +36,7 @@ Commit: ` + commit)
 	var parameters string
 	flag.StringVar(&proxyConfig.Host, "host", "", "Listener host (default all local interfaces)")
 	flag.IntVar(&proxyConfig.Port, "port", 5432, "Listener port")
-	flag.IntVar(&proxyConfig.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connection traces, 2 = query traces, 3 = both (default 0)")
+	flag.IntVar(&proxyConfig.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connections, 2 = translated queries, 4 = all queries (default 0)")
 	flag.BoolVar(&proxyConfig.Polyfilled, "polyfill", true, "Polyfills already applied by a system account")
 	flag.StringVar(&proxyConfig.Remote, "remote", "", "Proxy remote address (default none)")
 	flag.StringVar(&proxyConfig.CertificateFile, "certificate", "", "SSL certificate file *.crt (default none)")
