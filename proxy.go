@@ -108,6 +108,49 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 	return msg, nil
 }
 
+func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error {
+	// Send the query to the backend server
+	queryMsg := &message.Query{QueryString: query}
+	if _, err := io.Copy(ctx.ServerConn, queryMsg.Reader()); err != nil {
+		return fmt.Errorf("Polyfill write failed: %w", err)
+	}
+
+	var result error
+	// Read and discard all response messages until the next ReadyForQuery ('Z')
+	for {
+		header := make([]byte, 5)
+		if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
+			return fmt.Errorf("Polyfill read failed: %w", err)
+		}
+
+		msgType := header[0]
+		bodyLen := int(binary.BigEndian.Uint32(header[1:5])) - 4
+
+		var body []byte
+		if bodyLen > 0 {
+			body = make([]byte, bodyLen)
+			if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
+				return fmt.Errorf("Polyfill read failed: %w", err)
+			}
+		}
+
+		if msgType == 'E' {
+			result = errors.New("Polyfill error")
+			errResp := message.ReadErrorResponse(body)
+			for _, f := range errResp.Fields {
+				if f.Type == 'M' {
+					result = errors.New(f.Value)
+					break
+				}
+			}
+		}
+
+		if msgType == 'Z' {
+			return result
+		}
+	}
+}
+
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
 	if config.Polyfilled {
 		return msg, nil
@@ -118,51 +161,9 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 	if createPolyfill == "" {
 		return msg, nil
 	}
-	additionalQuery := func(query string) error {
-		// Send the query to the backend server
-		queryMsg := &message.Query{QueryString: query}
-		if _, err := io.Copy(ctx.ServerConn, queryMsg.Reader()); err != nil {
-			return fmt.Errorf("Polyfill write failed: %w", err)
-		}
-
-		var responseError error
-		// Read and discard all response messages until the next ReadyForQuery ('Z')
-		for {
-			header := make([]byte, 5)
-			if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
-				return fmt.Errorf("Polyfill read failed: %w", err)
-			}
-
-			msgType := header[0]
-			bodyLen := int(binary.BigEndian.Uint32(header[1:5])) - 4
-
-			var body []byte
-			if bodyLen > 0 {
-				body = make([]byte, bodyLen)
-				if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
-					return fmt.Errorf("Polyfill read failed: %w", err)
-				}
-			}
-
-			if msgType == 'E' {
-				responseError = errors.New("Polyfill error")
-				errResp := message.ReadErrorResponse(body)
-				for _, f := range errResp.Fields {
-					if f.Type == 'M' {
-						responseError = errors.New(f.Value)
-						break
-					}
-				}
-			}
-
-			if msgType == 'Z' {
-				return responseError
-			}
-		}
-	}
-	err := additionalQuery(checkPolyfill)
-	if err != nil {
-		err = additionalQuery(createPolyfill)
+	err := config.sendQueryToServer(ctx, checkPolyfill)
+	if err != nil { // seems polyfill is not installed
+		err = config.sendQueryToServer(ctx, createPolyfill)
 		if config.Verbose&1 == 1 {
 			if err == nil {
 				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", config.clientInfo(ctx), time.Since(start).Microseconds())
