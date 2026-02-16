@@ -8,6 +8,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +17,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rueian/pgbroker/backend"
@@ -32,24 +35,7 @@ type ProxyConfig struct {
 	Polyfilled        bool
 	StartupParameters map[string]string
 	SqlTranslator
-}
-
-func (config *ProxyConfig) InitPolyfill(polyfillExecutor func(query string) error) error {
-	if polyfillExecutor == nil || config.SqlTranslator == nil || config.Polyfilled {
-		return nil
-	}
-	config.Polyfilled = true
-	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
-	if checkPolyfill != "" {
-		err := polyfillExecutor(checkPolyfill)
-		if err == nil {
-			return nil
-		}
-	}
-	if createPolyfill != "" {
-		return polyfillExecutor(createPolyfill)
-	}
-	return nil
+	PolyfillLock *sync.RWMutex
 }
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -112,6 +98,76 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 		msg.QueryString = parseMsg.QueryString
 	}
 	return msg, err
+}
+
+func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
+	if config.Polyfilled {
+		return msg, nil
+	}
+	config.PolyfillLock.Lock()
+	start := time.Now()
+	additionalQuery := func(query string) error {
+		// Send the query to the backend server
+		queryMsg := &message.Query{QueryString: query}
+		if _, err := io.Copy(ctx.ServerConn, queryMsg.Reader()); err != nil {
+			return fmt.Errorf("Session polyfill write failed: %w", err)
+		}
+
+		initError := ""
+		// Read and discard all response messages until the next ReadyForQuery ('Z')
+		for {
+			header := make([]byte, 5)
+			if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
+				return fmt.Errorf("init query read failed: %w", err)
+			}
+
+			msgType := header[0]
+			bodyLen := int(binary.BigEndian.Uint32(header[1:5])) - 4
+
+			var body []byte
+			if bodyLen > 0 {
+				body = make([]byte, bodyLen)
+				if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
+					return fmt.Errorf("init query read failed: %w", err)
+				}
+			}
+
+			if msgType == 'E' {
+				errResp := message.ReadErrorResponse(body)
+				for _, f := range errResp.Fields {
+					if f.Type == 'M' {
+						initError = f.Value
+						break
+					}
+				}
+			}
+
+			if msgType == 'Z' {
+				if initError != "" {
+					return errors.New(initError)
+				}
+				return nil
+			}
+		}
+	}
+	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
+	if createPolyfill == "" {
+		return msg, nil
+	}
+	err := additionalQuery(checkPolyfill)
+	if err != nil {
+		err = additionalQuery(createPolyfill)
+		if config.Verbose&1 == 1 {
+			if err == nil {
+				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", config.clientInfo(ctx), time.Since(start).Microseconds())
+			} else {
+				log.Printf("ERROR [%s] Polyfill error: %s\n", config.clientInfo(ctx), err.Error())
+			}
+		}
+	}
+	config.Polyfilled = true
+	config.PolyfillLock.Unlock()
+	return msg, nil
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
@@ -246,7 +302,11 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
 	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
 	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
+	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 
+	if config.PolyfillLock == nil {
+		config.PolyfillLock = &sync.RWMutex{}
+	}
 	return &proxy.Server{
 		TLSConfig:                tlsConfig,
 		PGResolver:               config,

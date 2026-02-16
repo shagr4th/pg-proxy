@@ -98,11 +98,6 @@ func TestIngres(t *testing.T) {
 		AssertNoError(t, err)
 		defer db.Close()
 
-		AssertNoError(t, proxyConfig.InitPolyfill(func(query string) error {
-			_, err := db.Exec(query)
-			return err
-		}))
-
 		AssertSqlQuery(t, db, "SELECT 'a' + 'b'", []string{"ab"})
 		AssertSqlQuery(t, db, "SELECT 'a' + $1", []string{"ab"}, "b")
 		AssertSqlQuery(t, db, "SELECT 'a' + ?", []string{"ab"}, "b")
