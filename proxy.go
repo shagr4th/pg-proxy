@@ -106,19 +106,23 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 	}
 	config.PolyfillLock.Lock()
 	start := time.Now()
+	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
+	if createPolyfill == "" {
+		return msg, nil
+	}
 	additionalQuery := func(query string) error {
 		// Send the query to the backend server
 		queryMsg := &message.Query{QueryString: query}
 		if _, err := io.Copy(ctx.ServerConn, queryMsg.Reader()); err != nil {
-			return fmt.Errorf("Session polyfill write failed: %w", err)
+			return fmt.Errorf("Polyfill write failed: %w", err)
 		}
 
-		initError := ""
+		var responseError error
 		// Read and discard all response messages until the next ReadyForQuery ('Z')
 		for {
 			header := make([]byte, 5)
 			if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
-				return fmt.Errorf("init query read failed: %w", err)
+				return fmt.Errorf("Polyfill read failed: %w", err)
 			}
 
 			msgType := header[0]
@@ -128,31 +132,25 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 			if bodyLen > 0 {
 				body = make([]byte, bodyLen)
 				if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
-					return fmt.Errorf("init query read failed: %w", err)
+					return fmt.Errorf("Polyfill read failed: %w", err)
 				}
 			}
 
 			if msgType == 'E' {
+				responseError = errors.New("Polyfill error")
 				errResp := message.ReadErrorResponse(body)
 				for _, f := range errResp.Fields {
 					if f.Type == 'M' {
-						initError = f.Value
+						responseError = errors.New(f.Value)
 						break
 					}
 				}
 			}
 
 			if msgType == 'Z' {
-				if initError != "" {
-					return errors.New(initError)
-				}
-				return nil
+				return responseError
 			}
 		}
-	}
-	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
-	if createPolyfill == "" {
-		return msg, nil
 	}
 	err := additionalQuery(checkPolyfill)
 	if err != nil {
