@@ -115,12 +115,16 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
-	log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
+	if config.Verbose&1 == 1 {
+		log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
+	}
 	return msg, nil
 }
 
 func (config *ProxyConfig) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.AuthenticationOk) (*message.AuthenticationOk, error) {
-	log.Printf("INFO  [%s] Server authentification OK (%d)\n", config.clientInfo(ctx), msg.ID)
+	if config.Verbose&1 == 1 {
+		log.Printf("INFO  [%s] Server authentification OK (%d)\n", config.clientInfo(ctx), msg.ID)
+	}
 	return msg, nil
 }
 
@@ -137,6 +141,9 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 }
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
+	if config.Verbose == 0 {
+		return msg, nil
+	}
 	var errorMessage string
 	var errorCode string
 	for _, err := range msg.Fields {
@@ -236,11 +243,9 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 		serverMessageHandlers.AddHandleRowDescription(config.handleRowDescription)
 	}
 
-	if config.Verbose&1 == 1 { // loggers only:
-		clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
-		serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
-		serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
-	}
+	clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
+	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
+	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
 
 	return &proxy.Server{
 		TLSConfig:                tlsConfig,
