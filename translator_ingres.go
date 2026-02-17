@@ -355,7 +355,8 @@ from information_schema.columns c) as iicolumns`)
 
 			} else if len(enclosure.Heads) == 1 {
 				afterEnclosure := enclosure.End.Next
-				if lastDDLToken != nil && lastDDLToken.Index > token.Index && (afterEnclosure == nil || !afterEnclosure.EqualFold("AS")) {
+				if (token.Prev != nil && token.Prev.EqualFold("::")) ||
+					(lastDDLToken != nil && lastDDLToken.Index > token.Index && (afterEnclosure == nil || !afterEnclosure.EqualFold("AS"))) {
 					// sauf si on est en create/declare/alter ou char(10) peut etre confondu avec un type de colonne
 					continue
 				}

@@ -230,6 +230,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select DATE_FORMAT(DATE('now'), '%Y%m%d')", []string{now.Format("20060102")})
 		AssertSqlQuery(t, db, "select DATE_FORMAT(SYSDATE, '%Y')", []string{fmt.Sprintf("%d", now.Year())})
 		AssertSqlQuery(t, db, "select TO_CHAR(SYSDATE, 'YYYYMMDD')", []string{now.Format("20060102")})
+		AssertSqlQuery(t, db, "select ('x x ')::char(4)", []string{now.Format("x x ")})
 		// not implemented AssertSqlQuery(t, db, "SELECT SHIFT('Company',4)", []string{"   Com"})
 		// not implemented AssertSqlQuery(t, db, "SELECT SHIFT('Company',-4)", []string{"any    "})
 		tm, err := time.Parse("2006-01-02", "2022-05-25")
