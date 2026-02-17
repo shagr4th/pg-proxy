@@ -95,6 +95,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 		if AS != nil {
 			ON := AS.Search("ON", nil, true)
 			for ON != nil {
+				parsed.Last().Append(" ") // on ajoute un espace à la fin de cette requête pour bien séparer les parties coupées et réarrangées
 				Next := ON.Next
 				if Next != nil && Next.EqualFold("COMMIT") {
 					break

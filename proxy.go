@@ -90,10 +90,10 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		}
 		return msg, nil
 	}
-	msg.QueryString = parsed.Sql() + fmt.Sprintf(" --translated in %d µs from:\n-- ", time.Since(start).Microseconds()) +
+	msg.QueryString = parsed.Sql() + " --translated from:\n-- " +
 		strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
 	if config.Verbose&2 == 2 {
-		log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
+		log.Printf("INFO  [%s] %s in %d µs\n", config.clientInfo(ctx), msg.QueryString, time.Since(start).Microseconds())
 	}
 	return msg, nil
 }

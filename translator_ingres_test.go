@@ -195,6 +195,14 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, testQuery, time.December, timeResults[0].Month())
 		AssertEquals(t, testQuery, 1, timeResults[0].Day())
 
+		res, err := translator.Translate("create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows", true, false)
+		if err != nil {
+			t.Fatal("Unexpected error")
+		}
+		if res.Sql() != "create temporary table session_tmp_param on commit preserve rows as select substring((par.param2)::text, 1,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'" {
+			t.Fatal("Unexpected query translation : " + res.Sql())
+		}
+
 		AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
 		AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE test_table6 as select societe, etat from test_table4 ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
