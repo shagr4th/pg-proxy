@@ -262,8 +262,7 @@ from information_schema.columns c) as iicolumns`)
 				// le membre de gauche est qqchose qui est suffixé par ::text
 				leftLeftToken := leftToken.Prev
 				if leftLeftToken != nil {
-					leftLeftLeftToken := leftToken.Prev
-					hasStrings = leftLeftLeftToken != nil && leftLeftToken.EqualFold(":") && leftLeftLeftToken.EqualFold(":")
+					hasStrings = leftLeftToken.EqualFold("::")
 				}
 
 			}
@@ -341,7 +340,7 @@ from information_schema.columns c) as iicolumns`)
 			token.SetValue("substring").Append("(")
 			beforeComma := enclosure.Heads[1].Prev.Prev
 			if beforeComma != nil {
-				beforeComma.Append(")", ":", ":", "text")
+				beforeComma.Append(")", "::", "text")
 				enclosure.End.Prev.Append(",", "1")
 			}
 
@@ -352,7 +351,7 @@ from information_schema.columns c) as iicolumns`)
 				token.SetValue("substring").Append("(")
 				beforeComma := enclosure.Heads[1].Prev.Prev
 				if beforeComma != nil {
-					beforeComma.Append(")", ":", ":", "text", ",", " ", "1")
+					beforeComma.Append(")", "::", "text", ",", " ", "1")
 				}
 
 			} else if len(enclosure.Heads) == 1 {
@@ -388,7 +387,7 @@ from information_schema.columns c) as iicolumns`)
 						currentToken = currentToken.Next
 					}
 				}
-				enclosure.End.Append(":", ":", textType)
+				enclosure.End.Append("::", textType)
 			}
 
 		} else if token.EqualFold("date_part") && len(enclosure.Heads) == 2 {
@@ -468,7 +467,7 @@ from information_schema.columns c) as iicolumns`)
 			enclosure.End.Prev.
 				Append(" ", "+", " ", "CAST", "(", "(", "(").
 				Paste(addition...).
-				Append(")", ":", ":", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
+				Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
 		}
 	}
 	return parsed, nil

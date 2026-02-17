@@ -279,7 +279,7 @@ func (t *SqlToken) Append(tokens ...string) *SqlToken {
 			typ = sqllexer.PUNCTUATION
 		} else if strings.HasPrefix(keyword, "'") && strings.HasSuffix(keyword, "'") {
 			typ = sqllexer.STRING
-		} else if keyword == "+" || keyword == "-" || keyword == "*" || keyword == "/" || keyword == "=" || keyword == "<" || keyword == ">" || keyword == "!" || keyword == "&" || keyword == "|" || keyword == "^" || keyword == "%" || keyword == "~" || keyword == "?" || keyword == "@" || keyword == ":" || keyword == "#" {
+		} else if keyword == "+" || keyword == "-" || keyword == "*" || keyword == "/" || keyword == "=" || keyword == "<" || keyword == ">" || keyword == "!" || keyword == "&" || keyword == "|" || keyword == "^" || keyword == "%" || keyword == "~" || keyword == "?" || keyword == "@" || keyword == "::" || keyword == "#" {
 			// cf isOperator in sqllexer_utils.go
 			typ = sqllexer.OPERATOR
 		} else if keyword == "0" || keyword == "1" { // lol
