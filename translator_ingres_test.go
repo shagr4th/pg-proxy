@@ -19,30 +19,38 @@ import (
 	_ "github.com/lib/pq"
 )
 
+const TestProxyPort = 5432
+const TestDatabasePort = TestProxyPort + 1
+const TestDatabaseName = "ingres"
+const TestDatabaseEncoding = "fr_FR.UTF-8"
+const TestUsername = "user"
+const TestPassword = "pass"
+
 func TestIngres(t *testing.T) {
-	// sinon : docker run --name postgres -e TZ=Europe/Paris --rm -p 5435:5432 -e POSTGRES_PASSWORD=a postgres:16.3-bookworm
+	pgPath := fmt.Sprintf("./pg-%s-%s-%s", TestDatabaseName, TestUsername, TestDatabaseEncoding)
 	postgres := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
 			Version(embeddedpostgres.V17).
-			BinariesPath("./pg-data/extracted").
-			RuntimePath("./pg-data/runtime").
-			DataPath("./pg-data/data").
-			CachePath("./pg-data/").
-			Locale("fr_FR.UTF-8").
+			BinariesPath(pgPath + "/extracted").
+			RuntimePath(pgPath + "/runtime").
+			DataPath(pgPath + "/data").
+			CachePath(pgPath).
 			Logger(nil).
-			Database("gestion").
-			Password("motdepasse").
-			Port(5434))
+			Locale(TestDatabaseEncoding).
+			Database(TestDatabaseName).
+			Username(TestUsername).
+			Password(TestPassword).
+			Port(TestDatabasePort))
 	AssertNoError(t, postgres.Start())
 	defer func() {
 		AssertNoError(t, postgres.Stop())
 	}()
 
-	ln, err := net.Listen("tcp", ":5432")
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", TestProxyPort))
 	AssertNoError(t, err)
 
 	translator := IngresTranslator()
-	cnxStr := "postgres://postgres:motdepasse@localhost:5432/gestion@localhost:5434?sslmode=require" // sslmode=disable
+	cnxStr := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
 
 	proxyConfig := &ProxyConfig{
 		SqlTranslator:   translator,
@@ -90,8 +98,8 @@ func TestIngres(t *testing.T) {
 		}
 		t.Logf("Time spent for %d %s threads : %d ms.\n", numThreads, name, time.Since(start).Milliseconds())
 	}
-	connectionsTest("raw", "postgres://postgres:motdepasse@localhost:5434/gestion?sslmode=disable", false)
-	connectionsTest("proxy", "postgres://postgres:motdepasse@localhost:5432/gestion@localhost:5434?sslmode=disable", false)
+	connectionsTest("raw", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", TestUsername, TestPassword, TestDatabasePort, TestDatabaseName), false)
+	connectionsTest("proxy", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=disable", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort), false)
 
 	for _, driver := range []string{"postgres", "pgx"} { // test 2 drivers différents
 		t.Logf("Testing driver %s", driver)
@@ -521,7 +529,7 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 
 	ss := time.Now()
 	for range numThreads * 100 {
-		lexer := sqllexer.New(large, sqllexer.WithDBMS(sqllexer.DBMSType("Ingres")))
+		lexer := sqllexer.New(large, sqllexer.WithDBMS(sqllexer.DBMSOracle))
 		for {
 			token := lexer.Scan()
 			if token.Type == sqllexer.EOF {
@@ -533,7 +541,7 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 
 	ss = time.Now()
 	for range numThreads * 100 {
-		r, err := ParseSql(large, sqllexer.DBMSType("Ingres"))
+		r, err := ParseSql(large, sqllexer.DBMSOracle)
 		AssertNoError(t, err)
 		r.Sql()
 	}
@@ -586,11 +594,11 @@ func TestParseFile(t *testing.T) {
 	  AND agence = :agence
 	  AND client = :client;
 	  
-	  `, sqllexer.DBMSType("Ingres"))
+	  `, sqllexer.DBMSOracle)
 	AssertNoError(t, err)
 	AssertEquals(t, "file", 3, len(result.Split()))
 
-	result, err = ParseSql("--comment", sqllexer.DBMSType("Ingres"))
+	result, err = ParseSql("--comment", sqllexer.DBMSOracle)
 	AssertNoError(t, err)
 	AssertEquals(t, "file", 0, len(result.Split()))
 }
