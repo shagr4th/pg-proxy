@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -86,9 +87,15 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 		}
 		WITH := token.Search("WITH", nil, true)
 		if WITH != nil {
-			afterWITH := WITH.Next
-			if afterWITH != nil && afterWITH.EqualFold("NORECOVERY") {
-				WITH.Cut(afterWITH.Next)
+			cutted := WITH.Cut(nil) // TODO: convertir ce qui peut l'être ?
+			if slices.ContainsFunc(cutted, func(tok *SqlToken) bool {
+				return tok.EqualFold("NOJOURNALING")
+			}) {
+				TABLE := token.Search("TABLE", nil, true)
+				UNLOGGED := token.Search("UNLOGGED", nil, true)
+				if UNLOGGED == nil {
+					TABLE.Prev.Append(" ", "UNLOGGED")
+				}
 			}
 		}
 		AS := token.Search("AS", nil, true)

@@ -123,6 +123,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT charextract (456, 2)", []string{"5"})
 		AssertSqlQuery(t, db, "SELECT date_part('mo', TO_DATE('20170503','YYYYMMDD'))", []int{5})
 		AssertSqlExec(t, db, true, "drop table if exists test_table4", 0)
+		AssertSqlExec(t, db, true, "drop table if exists test_table5", 0)
 
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE1 VALUES ('dummy', '100100')", 1)
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE2 VALUES ('dummy')", 1)
@@ -205,6 +206,7 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
+		AssertSqlExec(t, db, true, "create table test_table5 as select * from test_table4 with location = (ii_commercial), nojournaling", 0)
 		AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE test_table6 as select societe, etat from test_table4 ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090 (ID_COTATION DECIMAL (8,0), DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (ID_COTATION, DATE_MAJ) VALUES (5.6, date('now'))", 1)
