@@ -95,7 +95,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 			}) {
 				TABLE := token.Search("TABLE", nil, true)
 				UNLOGGED := token.Search("UNLOGGED", nil, true)
-				if UNLOGGED == nil {
+				if TABLE != nil && UNLOGGED == nil {
 					TABLE.Prev.Append(" ", "UNLOGGED")
 				}
 			}
