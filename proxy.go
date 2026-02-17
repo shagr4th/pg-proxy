@@ -78,14 +78,14 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 }
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
-	config.latestQueryError.Delete(ctx)
 	start := time.Now()
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
 		config.latestQueryError.Store(ctx, err)
+		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
-		if err == nil && config.Verbose&4 == 4 {
+		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 		}
 		return msg, nil
@@ -152,6 +152,7 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 }
 
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
+	config.latestQueryError.Delete(ctx)
 	if config.Polyfilled {
 		return msg, nil
 	}
@@ -178,6 +179,7 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
+	config.latestQueryError.Delete(ctx)
 	if config.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
 	}
@@ -195,7 +197,8 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 	for i := range msg.Fields {
 		name, err := config.RenameColumn(i, msg.Fields[i].Name)
 		if err != nil {
-			return nil, err
+			config.latestQueryError.Store(ctx, err)
+			return msg, nil
 		}
 		msg.Fields[i].Name = name
 	}

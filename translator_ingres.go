@@ -9,6 +9,8 @@ import (
 	"github.com/DataDog/go-sqllexer"
 )
 
+const ingresStaticFixedCharFeature = false // on active ?
+
 type ingresTranslator struct {
 }
 
@@ -369,7 +371,24 @@ from information_schema.columns c) as iicolumns`)
 				}
 				// utilisation de (1)::text à la place de char(1)
 				token.Cut(token.Next) // suppression token de fonction
-				enclosure.End.Append(":", ":", "text")
+				textType := "text"
+				if ingresStaticFixedCharFeature {
+					currentToken := enclosure.Heads[0]
+					for {
+						if currentToken == enclosure.End {
+							break
+						}
+						if textType != "text" || currentToken.Type != sqllexer.STRING {
+							// n'importe quel autre token qu'un STRING dans l'argument passé à char() annule cette feature
+							textType = "text"
+							break
+						} else {
+							textType = fmt.Sprintf("char(%d)", len(currentToken.Value)-2) // on enlève les quotes pour calculer la taille fixe
+						}
+						currentToken = currentToken.Next
+					}
+				}
+				enclosure.End.Append(":", ":", textType)
 			}
 
 		} else if token.EqualFold("date_part") && len(enclosure.Heads) == 2 {

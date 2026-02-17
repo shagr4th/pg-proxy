@@ -149,6 +149,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select char(COLUMN1, 1) + COLUMN1 from TABLE1", []string{"ddummy"})
 		AssertSqlQuery(t, db, "select COLUMN1 +upper(COLUMN1)  from TABLE1", []string{"dummyDUMMY"})
 		AssertSqlQuery(t, db, "select COLUMN1 + char('A')  from TABLE1", []string{"dummyA"})
+		AssertSqlQuery(t, db, "select COLUMN1 + char('A' + 'B')  from TABLE1", []string{"dummyAB"})
 		AssertSqlQuery(t, db, "select t.HEUREMAJ + COLUMN1  from TABLE1 t", []string{"100100dummy"})
 		AssertSqlQuery(t, db, "select COLUMN1 + HEUREMAJ from TABLE1 t", []string{"dummy100100"})
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
