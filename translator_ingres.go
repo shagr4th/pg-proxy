@@ -370,24 +370,27 @@ from information_schema.columns c) as iicolumns`)
 				}
 				// utilisation de (1)::text à la place de char(1)
 				token.Cut(token.Next) // suppression token de fonction
-				textType := "text"
+				castToType := "text"
 				if ingresStaticFixedCharFeature {
 					currentToken := enclosure.Heads[0]
 					for {
 						if currentToken == enclosure.End {
 							break
 						}
-						if textType != "text" || currentToken.Type != sqllexer.STRING {
-							// n'importe quel autre token qu'un STRING dans l'argument passé à char() annule cette feature
-							textType = "text"
+						if castToType != "text" || currentToken.Type != sqllexer.STRING {
+							// n'importe quel autre token qu'un STRING dans l'argument passé à char() annule le cast
+							castToType = "text"
 							break
 						} else {
-							textType = fmt.Sprintf("char(%d)", len(currentToken.Value)-2) // on enlève les quotes pour calculer la taille fixe
+							//castToType = fmt.Sprintf("char(%d)", len(currentToken.Value)-2) // on enlève les quotes pour calculer la taille fixe
+							castToType = ""
 						}
 						currentToken = currentToken.Next
 					}
 				}
-				enclosure.End.Append("::", textType)
+				if castToType != "" {
+					enclosure.End.Append("::", castToType)
+				}
 			}
 
 		} else if token.EqualFold("date_part") && len(enclosure.Heads) == 2 {

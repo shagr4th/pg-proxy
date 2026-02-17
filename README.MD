@@ -1,7 +1,7 @@
 ## Supporté
 
 * `DECLARE GLOBAL` → `CREATE`
-* `WITH NORECOVERY` supprimés
+* Options `WITH ...` supprimés, sauf `NOJOURNALING`, conservé via un `CREATE UNLOGGED TABLE`
 * Inversion `CREATE... AS ... ON ...` → `CREATE... ON ... AS ...` (le `ON` doit etre avant le `AS` sous Postgres)
 * Inversion `UPDATE FROM SET` → `UPDATE SET FROM` (et suppression des aliases sur la clause SET: `update from table a set a.col = 1` → `update set col = 1 from table a`)
 * `COPY...INTO` → `COPY...TO`
@@ -9,7 +9,7 @@
 * Suppression des alias commencant par `session.`
 * `ingresdate` → `date`
 * `sysdate` → `current_timestamp`
-* Refactoring/support des fonctions `charextract`, `char`, `date_part`, `squeeze`, `date_format`, `ifnull`, `lowercase`, `uppercase`, `decimal`, `timestampadd`
+* Refactoring/support des fonctions `charextract`, `char`, `vchar`, `date_part`, `squeeze`, `date_format`, `ifnull`, `lowercase`, `uppercase`, `decimal`, `timestampadd`
 * Refactoring/support des fonctions `right`/`left` en mode conservation de largeur du char (via l'intermédiaire d'un `format('%s', xxx)`)
 * Gestion de l'appel à une séquence via `maseq.nextval` → `nextval('maseq')`
 * **PLUS BESOIN GRACE A OPERATEUR** : Remplacement du `+` par `||`, seulement si on peut déterminer de façon sûre qu'un des 2 membres est de type texte:
