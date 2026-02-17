@@ -343,7 +343,7 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.End.Prev.Append(",", "1")
 			}
 
-		} else if token.EqualFold("char") {
+		} else if token.EqualFold("char") || token.EqualFold("vchar") {
 			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
 				// il y a une virgule, c'est un char(xxx, n) en mode extraction des 'n' premiers caractères
 				// on fait select char(XXX, 2) -> select substring ((XXX)::text, 1, 2)
@@ -354,7 +354,8 @@ from information_schema.columns c) as iicolumns`)
 				}
 
 			} else if len(enclosure.Heads) == 1 {
-				if lastDDLToken != nil && lastDDLToken.Index > token.Index {
+				afterEnclosure := enclosure.End.Next
+				if lastDDLToken != nil && lastDDLToken.Index > token.Index && (afterEnclosure == nil || !afterEnclosure.EqualFold("AS")) {
 					// sauf si on est en create/declare/alter ou char(10) peut etre confondu avec un type de colonne
 					continue
 				}
