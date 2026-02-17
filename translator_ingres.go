@@ -9,7 +9,7 @@ import (
 	"github.com/DataDog/go-sqllexer"
 )
 
-const ingresStaticFixedCharFeature = false // on active ?
+const staticStringCharFeature = false // on active ?
 
 type ingresTranslator struct {
 }
@@ -90,7 +90,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 		WITH := token.Search("WITH", nil, true)
 		if WITH != nil {
 			cutted := WITH.Cut(nil) // TODO: convertir ce qui peut l'être ?
-			if slices.ContainsFunc(cutted, func(tok *SqlToken) bool {
+			if cutted != nil && slices.ContainsFunc(cutted, func(tok *SqlToken) bool {
 				return tok.EqualFold("NOJOURNALING")
 			}) {
 				TABLE := token.Search("TABLE", nil, true)
@@ -363,7 +363,7 @@ from information_schema.columns c) as iicolumns`)
 				}
 				if token.Prev != nil && token.Prev.EqualFold("AS") {
 					castFunction, argumentIndex := token.EnclosingFunction()
-					if castFunction.EqualFold("CAST") && argumentIndex == 0 {
+					if castFunction != nil && castFunction.EqualFold("CAST") && argumentIndex == 0 {
 						// ou si on a fait un "CAST(xxx AS CHAR(10))"
 						continue
 					}
@@ -371,7 +371,7 @@ from information_schema.columns c) as iicolumns`)
 				// utilisation de (1)::text à la place de char(1)
 				token.Cut(token.Next) // suppression token de fonction
 				castToType := "text"
-				if ingresStaticFixedCharFeature {
+				if staticStringCharFeature {
 					currentToken := enclosure.Heads[0]
 					for {
 						if currentToken == enclosure.End {
