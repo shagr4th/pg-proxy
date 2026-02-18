@@ -25,11 +25,6 @@ import (
 	"github.com/rueian/pgbroker/proxy"
 )
 
-type QueryError struct {
-	context string
-	err     error
-}
-
 type ProxyConfig struct {
 	Host              string
 	Port              int
@@ -40,8 +35,7 @@ type ProxyConfig struct {
 	Polyfilled        bool
 	StartupParameters map[string]string
 	SqlTranslator
-	polyfillLock     *sync.RWMutex
-	latestQueryError sync.Map
+	polyfillLock *sync.RWMutex
 }
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -84,12 +78,10 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	start := time.Now()
+	ctx.ConnInfo.StartupParameters[proxyQueryKey] = msg.QueryString
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
-		config.latestQueryError.Store(ctx, &QueryError{
-			context: msg.QueryString,
-			err:     err,
-		})
+		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
@@ -159,8 +151,12 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 	}
 }
 
+const proxyQueryKey = "_proxy_query"
+const proxyErrorKey = "_proxy_error"
+
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
-	config.latestQueryError.Delete(ctx)
+	delete(ctx.ConnInfo.StartupParameters, proxyQueryKey)
+	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
 	if config.Polyfilled {
 		return msg, nil
 	}
@@ -187,7 +183,6 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
-	config.latestQueryError.Delete(ctx)
 	if config.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
 	}
@@ -205,10 +200,7 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 	for i := range msg.Fields {
 		name, err := config.RenameColumn(i, msg.Fields[i].Name)
 		if err != nil {
-			config.latestQueryError.Store(ctx, &QueryError{
-				context: msg.Fields[i].Name,
-				err:     err,
-			})
+			ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 			return msg, nil
 		}
 		msg.Fields[i].Name = name
@@ -218,27 +210,23 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 }
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
-	queryErrorObject, queryErrorLoaded := config.latestQueryError.LoadAndDelete(ctx)
-	if config.Verbose == 0 && !queryErrorLoaded {
-		return msg, nil
-	}
 	var errorMessage string
 	var errorCode string
 	for i, err := range msg.Fields {
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
-			if queryErrorLoaded {
-				queryError, ok := queryErrorObject.(*QueryError)
-				if ok {
-					errorMessage = fmt.Sprintf("pg-proxy error: %v (original: %s) (postgres error: %s)", queryError.err, queryError.context, errorMessage)
-					newFields := append(msg.Fields[0:i], message.ErrorField{
-						Type:  err.Type,
-						Value: errorMessage,
-					})
-					msg.Fields = append(newFields, msg.Fields[i+1:]...)
-				}
+			query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
+			if errorFound && queryFound {
+				errorMessage = fmt.Sprintf("pg-proxy error: %v (query: %s) (original postgres error: %s)", queryError, query, errorMessage)
+				newFields := append(msg.Fields[0:i], message.ErrorField{
+					Type:  err.Type,
+					Value: errorMessage,
+				})
+				msg.Fields = append(newFields, msg.Fields[i+1:]...)
 			}
+
 		case 67:
 			errorCode = err.Value
 		}
