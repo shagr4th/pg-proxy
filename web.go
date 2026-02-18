@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -95,19 +96,37 @@ func (s *QueryStore) Unsubscribe(id uint64) {
 	s.mu.Unlock()
 }
 
+// basicAuth wraps a handler with HTTP Basic Auth. Skipped when user is empty.
+func basicAuth(user, pass string, next http.HandlerFunc) http.HandlerFunc {
+	if user == "" {
+		return next
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		if !ok ||
+			subtle.ConstantTimeCompare([]byte(u), []byte(user)) != 1 ||
+			subtle.ConstantTimeCompare([]byte(p), []byte(pass)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="pg-proxy"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // StartWebServer starts the HTTP server for the web UI in a goroutine.
-func StartWebServer(port int, store *QueryStore) {
+func StartWebServer(port int, store *QueryStore, user, pass string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", basicAuth(user, pass, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, webUIHTML)
-	})
-	mux.HandleFunc("/queries", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/queries", basicAuth(user, pass, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		json.NewEncoder(w).Encode(store.Recent())
-	})
-	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("/events", basicAuth(user, pass, func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "Streaming not supported", http.StatusInternalServerError)
@@ -142,7 +161,7 @@ func StartWebServer(port int, store *QueryStore) {
 				flusher.Flush()
 			}
 		}
-	})
+	}))
 
 	go func() {
 		addr := fmt.Sprintf(":%d", port)
