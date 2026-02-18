@@ -92,6 +92,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 				Time:        start,
 				ClientInfo:  config.clientInfo(ctx),
 				OriginalSQL: originalSQL,
+				Error:       err.Error(),
 			})
 		}
 		return msg, nil

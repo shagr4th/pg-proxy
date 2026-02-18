@@ -20,6 +20,7 @@ type QueryRecord struct {
 	FinalSQL    string    `json:"final"`       // empty when not transformed
 	TranslateUs int64     `json:"translateUs"` // translation duration in microseconds
 	Transformed bool      `json:"transformed"`
+	Error       string    `json:"error"` // translation error, if any
 }
 
 // QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.
@@ -187,10 +188,13 @@ const webUIHTML = `<!DOCTYPE html>
   .table-wrap { flex: 1; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   colgroup col:nth-child(1) { width: 80px; }
-  colgroup col:nth-child(2) { width: 160px; }
-  colgroup col:nth-child(3) { width: calc(50% - 200px); }
-  colgroup col:nth-child(4) { width: calc(50% - 80px); }
-  colgroup col:nth-child(5) { width: 80px; }
+  colgroup col:nth-child(2) { width: 140px; }
+  colgroup col:nth-child(3) { width: calc(40% - 140px); }
+  colgroup col:nth-child(4) { width: calc(40% - 80px); }
+  colgroup col:nth-child(5) { width: 20%; }
+  colgroup col:nth-child(6) { width: 70px; }
+  tbody tr.error { border-left: 2px solid var(--red); }
+  td.err { color: var(--red); font-size: 11px; }
   thead th { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: 7px 10px; text-align: left; font-size: 11px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; z-index: 1; }
   tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
   tbody tr:hover { background: var(--surface); }
@@ -220,7 +224,7 @@ const webUIHTML = `<!DOCTYPE html>
 <div class="table-wrap" id="tableWrap">
   <table id="queryTable">
     <colgroup>
-      <col><col><col><col><col>
+      <col><col><col><col><col><col>
     </colgroup>
     <thead>
       <tr>
@@ -228,6 +232,7 @@ const webUIHTML = `<!DOCTYPE html>
         <th>Client</th>
         <th>Original SQL</th>
         <th>Translated SQL</th>
+        <th>Error</th>
         <th>Duration</th>
       </tr>
     </thead>
@@ -277,17 +282,19 @@ const webUIHTML = `<!DOCTYPE html>
   function rowMatchesFilter(rec) {
     if (!filterText) return true;
     const t = filterText.toLowerCase();
-    return rec.original.toLowerCase().includes(t) || rec.final.toLowerCase().includes(t) || rec.client.toLowerCase().includes(t);
+    return rec.original.toLowerCase().includes(t) || rec.final.toLowerCase().includes(t) || rec.client.toLowerCase().includes(t) || (rec.error||'').toLowerCase().includes(t);
   }
 
   function makeRow(rec, animate) {
     const tr = document.createElement('tr');
-    if (rec.transformed) tr.classList.add('transformed');
+    if (rec.error) tr.classList.add('error');
+    else if (rec.transformed) tr.classList.add('transformed');
     if (animate) tr.classList.add('new-row');
     tr.dataset.id = rec.id;
     tr.dataset.original = rec.original;
     tr.dataset.final = rec.final;
     tr.dataset.client = rec.client;
+    tr.dataset.error = rec.error || '';
 
     const durClass = rec.translateUs > 0 && rec.translateUs < 5000 ? 'dur fast' : 'dur';
 
@@ -296,6 +303,7 @@ const webUIHTML = `<!DOCTYPE html>
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
       '<td class="sql translated">' + (rec.transformed ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
+      '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>' +
       '<td class="' + durClass + '">' + (rec.transformed ? formatDur(rec.translateUs) : '') + '</td>';
     return tr;
   }
@@ -303,7 +311,7 @@ const webUIHTML = `<!DOCTYPE html>
   function applyFilter() {
     let visible = 0;
     for (const tr of tbody.rows) {
-      const rec = { original: tr.dataset.original, final: tr.dataset.final, client: tr.dataset.client };
+      const rec = { original: tr.dataset.original, final: tr.dataset.final, client: tr.dataset.client, error: tr.dataset.error };
       const show = rowMatchesFilter(rec);
       tr.style.display = show ? '' : 'none';
       if (show) visible++;
@@ -313,6 +321,7 @@ const webUIHTML = `<!DOCTYPE html>
         tr.cells[3].innerHTML = rec.final
           ? highlight(rec.final, filterText)
           : '<span style="color:var(--text-dim)">—</span>';
+        tr.cells[4].innerHTML = rec.error ? highlight(rec.error, filterText) : '';
       }
     }
     counter.textContent = totalCount + ' queries' + (filterText ? ' (' + visible + ' shown)' : '');
