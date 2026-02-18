@@ -206,13 +206,10 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, testQuery, time.December, timeResults[0].Month())
 		AssertEquals(t, testQuery, 1, timeResults[0].Day())
 
-		res, err := translator.Translate("create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows", true, false)
-		if err != nil {
-			t.Fatal("Unexpected error")
-		}
-		if res.Sql() != "create temporary table session_tmp_param on commit preserve rows as select substring((par.param2)::text, 1,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'" {
-			t.Fatal("Unexpected query translation : " + res.Sql())
-		}
+		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
+		res, err := translator.Translate(testQuery, true, false)
+		AssertNoError(t, err)
+		AssertEquals(t, testQuery, "create temporary table session_tmp_param on commit preserve rows as select substring((par.param2)::text, 1,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql())
 
 		AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
@@ -254,7 +251,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('SESSION_ID')", 1)
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('DUMMY')", 1)
 		AssertSqlQuery(t, db, "select char('456', 2)", []string{"45"})
-		AssertSqlQuery(t, db, "select char(456)", []string{"456"})
+		AssertSqlQuery(t, db, "select char(456) + vchar('A') + varchar(789)", []string{"456A789"})
 		AssertSqlQuery(t, db, "select char(456, 2)", []string{"45"})
 		AssertSqlQuery(t, db, "select right(cast('123456' as char(10)), 2)", []string{"  "})
 		AssertSqlQuery(t, db, "select left(cast('123456' as char(10)), 8)", []string{"123456  "})

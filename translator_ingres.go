@@ -344,7 +344,7 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.End.Prev.Append(",", "1")
 			}
 
-		} else if token.EqualFold("char") || token.EqualFold("vchar") {
+		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") {
 			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
 				// il y a une virgule, c'est un char(xxx, n) en mode extraction des 'n' premiers caractères
 				// on fait select char(XXX, 2) -> select substring ((XXX)::text, 1, 2)
