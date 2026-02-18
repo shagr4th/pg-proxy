@@ -116,11 +116,6 @@ func StartWebServer(port int, store *QueryStore, secret string) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, webUIHTML)
 	}))
-	mux.HandleFunc("/queries", secretAuth(secret, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		json.NewEncoder(w).Encode(store.Recent())
-	}))
 	mux.HandleFunc("/events", secretAuth(secret, func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
@@ -385,7 +380,7 @@ const webUIHTML = `<!DOCTYPE html>
 
   // SSE connection
   function connect() {
-    const es = new EventSource('/events');
+    const es = new EventSource('/events' + window.location.search);
     statusEl.className = 'disconnected';
     statusEl.textContent = 'connecting';
 
