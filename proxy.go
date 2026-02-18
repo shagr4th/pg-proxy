@@ -246,6 +246,8 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			errorMessage = err.Value
 			query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
 			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
+			delete(ctx.ConnInfo.StartupParameters, proxyQueryKey)
+			delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
 			if queryFound && !errorFound { // erreur postgres sans traduction en erreur
 				errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, query)
 				if config.QueryStore != nil {
