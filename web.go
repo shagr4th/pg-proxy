@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const maxQueryBufferSize = 500
+const maxQueryBufferSize = 10000
 
 // QueryRecord holds information about a single SQL query that passed through the proxy.
 type QueryRecord struct {
@@ -17,18 +17,21 @@ type QueryRecord struct {
 	Time        time.Time `json:"time"`
 	ClientInfo  string    `json:"client"`
 	OriginalSQL string    `json:"original"`
-	FinalSQL    string    `json:"final"`    // empty when not transformed
+	FinalSQL    string    `json:"final"`       // empty when not transformed
 	TranslateUs int64     `json:"translateUs"` // translation duration in microseconds
 	Transformed bool      `json:"transformed"`
 }
 
-// QueryStore is a thread-safe ring buffer of QueryRecords with SSE subscriber support.
+// QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.
+// Memory is bounded permanently to maxQueryBufferSize entries.
 type QueryStore struct {
-	mu         sync.RWMutex
-	entries    []QueryRecord
-	nextID     uint64
+	mu          sync.RWMutex
+	entries     [maxQueryBufferSize]QueryRecord
+	head        int // next slot to write
+	count       int // number of valid entries (0..maxQueryBufferSize)
+	nextID      uint64
 	subscribers map[uint64]chan QueryRecord
-	nextSubID  uint64
+	nextSubID   uint64
 }
 
 func NewQueryStore() *QueryStore {
@@ -37,14 +40,16 @@ func NewQueryStore() *QueryStore {
 	}
 }
 
-// Add appends a record to the ring buffer and broadcasts to all SSE subscribers.
+// Add writes a record into the ring buffer (overwriting the oldest when full)
+// and broadcasts to all SSE subscribers.
 func (s *QueryStore) Add(r QueryRecord) {
 	s.mu.Lock()
 	r.ID = s.nextID
 	s.nextID++
-	s.entries = append(s.entries, r)
-	if len(s.entries) > maxQueryBufferSize {
-		s.entries = s.entries[len(s.entries)-maxQueryBufferSize:]
+	s.entries[s.head] = r
+	s.head = (s.head + 1) % maxQueryBufferSize
+	if s.count < maxQueryBufferSize {
+		s.count++
 	}
 	// Broadcast to subscribers (non-blocking)
 	for _, ch := range s.subscribers {
@@ -56,12 +61,15 @@ func (s *QueryStore) Add(r QueryRecord) {
 	s.mu.Unlock()
 }
 
-// Recent returns a copy of all buffered records (oldest first).
+// Recent returns a copy of all buffered records in insertion order (oldest first).
 func (s *QueryStore) Recent() []QueryRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]QueryRecord, len(s.entries))
-	copy(out, s.entries)
+	out := make([]QueryRecord, s.count)
+	start := (s.head - s.count + maxQueryBufferSize) % maxQueryBufferSize
+	for i := range out {
+		out[i] = s.entries[(start+i)%maxQueryBufferSize]
+	}
 	return out
 }
 
