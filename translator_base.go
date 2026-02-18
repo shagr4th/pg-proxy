@@ -37,6 +37,7 @@ type SqlToken struct {
 
 type SqlQuery struct {
 	tokens               []*SqlToken
+	separators           []*SqlToken
 	Transformed          bool
 	PlaceholderPositions []int
 }
@@ -92,7 +93,7 @@ func ParseSql(query string, dbms sqllexer.DBMSType) (*SqlQuery, error) {
 	bindIndex := 0
 	for i, token := range q.tokens {
 		if token.Type == sqllexer.OPERATOR && token.EqualFold("?") &&
-			(token == q.Last() || q.tokens[i+1].Type == sqllexer.SPACE ||
+			(token == q.tokens[len(q.tokens)-1] || q.tokens[i+1].Type == sqllexer.SPACE ||
 				q.tokens[i+1].Type == sqllexer.OPERATOR ||
 				q.tokens[i+1].Type == sqllexer.PUNCTUATION) {
 			bindIndex++
@@ -172,6 +173,8 @@ func (q *SqlQuery) reindex() {
 			addHead = false
 		} else if token.EqualFold(",") {
 			addHead = true
+		} else if token.EqualFold(";") && token.Type == sqllexer.PUNCTUATION {
+			q.separators = append(q.separators, token)
 		}
 	}
 	for i := len(q.tokens) - 1; i >= 0; i-- {
@@ -219,13 +222,22 @@ func (q *SqlQuery) Sql() string {
 }
 
 /*
-Retourne le dernier token
+Retourne le dernier token de la requête
 */
-func (q *SqlQuery) Last() *SqlToken {
-	if len(q.tokens) > 0 {
-		return q.tokens[len(q.tokens)-1]
+func (t *SqlToken) Last() *SqlToken {
+	for _, qs := range t.query.separators {
+		if qs.Index >= t.Index {
+			return qs.Prev
+		}
 	}
-	return nil
+	return t.query.tokens[len(t.query.tokens)-1]
+}
+
+/*
+Retourne vrai si c'est un séparateur de requête
+*/
+func (t *SqlToken) IsSeparator() bool {
+	return slices.Contains(t.query.separators, t)
 }
 
 /*
@@ -344,7 +356,7 @@ func (t *SqlToken) Cut(until *SqlToken) []*SqlToken {
 		to = slices.Index(t.query.tokens, until)
 	}
 	if to == -1 {
-		to = len(t.query.tokens)
+		to = t.Last().Index + 1
 	}
 	var cut []*SqlToken = nil
 	if t.Index > -1 && to > t.Index {

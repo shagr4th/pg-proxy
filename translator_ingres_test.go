@@ -133,6 +133,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "drop table if exists test_table4", 0)
 		AssertSqlExec(t, db, true, "drop table if exists test_table5", 0)
 		AssertSqlExec(t, db, true, "drop table if exists test_table6", 0)
+		AssertSqlExec(t, db, true, "drop table if exists trt_recepisse", 0)
 
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE1 VALUES ('dummy', '100100')", 1)
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE2 VALUES ('dummy')", 1)
@@ -215,6 +216,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
 		AssertSqlExec(t, db, true, "create table test_table5 as select * from test_table4 with location = (ii_commercial), nojournaling", 0)
 		AssertSqlExec(t, db, true, "create table test_table6 as select char('00        ') as prestation", 1)
+		AssertSqlExec(t, db, false, `SET lockmode session where readlock=nolock;create table trt_recepisse( societe bpchar(04) not null, rff varchar(35) not null default ' ')`, 0)
 		AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE test_table6 as select societe, etat from test_table4 ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090 (ID_COTATION DECIMAL (8,0), DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (ID_COTATION, DATE_MAJ) VALUES (5.6, date('now'))", 1)

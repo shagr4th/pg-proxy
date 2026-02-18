@@ -75,11 +75,24 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 	}
 
 	token := parsed.First()
+	for {
+		token, err = v.singleQueryTranslate(parsed, token, polyfilled, withPlaceHolder)
+		if err != nil {
+			return nil, err
+		}
+		if token == nil {
+			break
+		}
+	}
+	return parsed, nil
+}
+
+func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, polyfilled bool, withPlaceHolder bool) (*SqlToken, error) {
 	var lastDDLToken *SqlToken = nil
 
 	// check des commandes
 	if token.EqualFold("CREATE", "DECLARE", "ALTER") {
-		lastDDLToken = parsed.Last()
+		lastDDLToken = token.Last()
 		if token.EqualFold("DECLARE") {
 			token.SetValue("CREATE")
 		}
@@ -115,7 +128,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 				// inversion du create table ... as ... on commit ...
 				cutted := AS.Cut(ON)
 				if cutted != nil {
-					parsed.Last().Append(" ").Paste(cutted...)
+					token.Last().Append(" ").Paste(cutted...)
 				}
 				if len(cutted) > 0 {
 					lastDDLToken = cutted[0]
@@ -155,7 +168,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 			if SETafterFROM != nil {
 				fromTokens := FROM.Cut(SETafterFROM)
 				if len(fromTokens) > 0 {
-					newPos := parsed.Last()
+					newPos := token.Last()
 					if WHERE != nil {
 						newPos = WHERE.Prev
 					}
@@ -189,7 +202,9 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 	for { // après la gestion des commandes SQL, parcours de chaque token non vide
 		token = token.Next
 		if token == nil {
-			break // fin du parcours
+			return token, nil // fin du parcours
+		} else if token.IsSeparator() { // plusieurs commandes dans la même requête
+			return token.Next, nil
 		} else if token.Type == sqllexer.IDENT && token.StartsWith("session.") {
 			token.SetValue(token.Value[8:])
 			continue
@@ -473,5 +488,4 @@ from information_schema.columns c) as iicolumns`)
 				Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
 		}
 	}
-	return parsed, nil
 }
