@@ -25,6 +25,11 @@ import (
 	"github.com/rueian/pgbroker/proxy"
 )
 
+type QueryError struct {
+	context string
+	err     error
+}
+
 type ProxyConfig struct {
 	Host              string
 	Port              int
@@ -81,7 +86,10 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	start := time.Now()
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
-		config.latestQueryError.Store(ctx, err)
+		config.latestQueryError.Store(ctx, &QueryError{
+			context: msg.QueryString,
+			err:     err,
+		})
 		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
@@ -197,7 +205,10 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 	for i := range msg.Fields {
 		name, err := config.RenameColumn(i, msg.Fields[i].Name)
 		if err != nil {
-			config.latestQueryError.Store(ctx, err)
+			config.latestQueryError.Store(ctx, &QueryError{
+				context: msg.Fields[i].Name,
+				err:     err,
+			})
 			return msg, nil
 		}
 		msg.Fields[i].Name = name
@@ -218,9 +229,9 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 		case 77:
 			errorMessage = err.Value
 			if queryErrorLoaded {
-				queryError, ok := queryErrorObject.(error)
+				queryError, ok := queryErrorObject.(*QueryError)
 				if ok {
-					errorMessage = fmt.Sprintf("pg-proxy error: %v (postgres error: %s)", queryError, errorMessage)
+					errorMessage = fmt.Sprintf("pg-proxy error: %v (original: %s) (postgres error: %s)", queryError.err, queryError.context, errorMessage)
 					newFields := append(msg.Fields[0:i], message.ErrorField{
 						Type:  err.Type,
 						Value: errorMessage,
