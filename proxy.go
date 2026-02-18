@@ -216,13 +216,16 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
+			query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
 			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
-			if errorFound {
-				query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+			if queryFound && !errorFound { // erreur postgres sans traduction en erreur
+				errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, query)
+			} else if errorFound { // erreur interne du proxy
 				if !queryFound {
 					query = "<unknown>"
 				}
-				errorMessage = fmt.Sprintf("pg-proxy error: %v (query: %s) (postgres error: %s)", queryError, query, err.Value)
+				errorMessage = fmt.Sprintf("pg-proxy error: %v (from query: %s) (postgres error: %s)", queryError, query, err.Value)
+				// on surcharge le retour d'erreur pour le client
 				newFields := append(msg.Fields[0:i], message.ErrorField{
 					Type:  err.Type,
 					Value: errorMessage,
