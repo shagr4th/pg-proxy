@@ -248,6 +248,14 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
 			if queryFound && !errorFound { // erreur postgres sans traduction en erreur
 				errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, query)
+				if config.QueryStore != nil {
+					config.QueryStore.Add(QueryRecord{
+						Time:        time.Now(),
+						ClientInfo:  config.clientInfo(ctx),
+						OriginalSQL: query,
+						Error:       err.Value,
+					})
+				}
 			} else if errorFound { // erreur interne du proxy
 				if !queryFound {
 					query = "<unknown>"
