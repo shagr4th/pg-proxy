@@ -34,6 +34,7 @@ Commit: ` + commit)
 
 	var translator string
 	var parameters string
+	var webPort int
 	flag.StringVar(&proxyConfig.Host, "host", "", "Listener host (default all local interfaces)")
 	flag.IntVar(&proxyConfig.Port, "port", 5432, "Listener port")
 	flag.IntVar(&proxyConfig.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connections, 2 = translated queries, 4 = all queries (default 0)")
@@ -43,6 +44,7 @@ Commit: ` + commit)
 	flag.StringVar(&proxyConfig.KeyFile, "key", "", "SSL key file *.key (default none)")
 	flag.StringVar(&translator, "translator", "ingres", "Query translator")
 	flag.StringVar(&parameters, "parameters", "{\"datestyle\":\"iso,us\"}", "Startup parameters") // on force datestyle pour simuler le date_format=US par défaut dans la base Ingres
+	flag.IntVar(&webPort, "web-port", 0, "Web UI port for query monitoring (0 = disabled)")
 	flag.Parse()
 
 	if translator == "ingres" {
@@ -53,6 +55,12 @@ Commit: ` + commit)
 		if err != nil {
 			log.Panic(err)
 		}
+	}
+	if webPort > 0 {
+		store := NewQueryStore()
+		proxyConfig.QueryStore = store
+		StartWebServer(webPort, store)
+		log.Printf("[Web UI listening on :%d]", webPort)
 	}
 
 	server, err := proxyConfig.NewServer()

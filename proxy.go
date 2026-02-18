@@ -34,6 +34,7 @@ type ProxyConfig struct {
 	Verbose           int
 	Polyfilled        bool
 	StartupParameters map[string]string
+	QueryStore        *QueryStore
 	SqlTranslator
 	polyfillLock *sync.RWMutex
 }
@@ -81,22 +82,48 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	start := time.Now()
+	originalSQL := msg.QueryString
 	ctx.ConnInfo.StartupParameters[proxyQueryKey] = msg.QueryString
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
+		if config.QueryStore != nil {
+			config.QueryStore.Add(QueryRecord{
+				Time:        start,
+				ClientInfo:  config.clientInfo(ctx),
+				OriginalSQL: originalSQL,
+			})
+		}
 		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 		}
+		if config.QueryStore != nil {
+			config.QueryStore.Add(QueryRecord{
+				Time:        start,
+				ClientInfo:  config.clientInfo(ctx),
+				OriginalSQL: originalSQL,
+			})
+		}
 		return msg, nil
 	}
-	msg.QueryString = parsed.Sql() + " --translated from:\n-- " +
+	finalSQL := parsed.Sql()
+	msg.QueryString = finalSQL + " --translated from:\n-- " +
 		strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
 	if config.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s in %d µs\n", config.clientInfo(ctx), msg.QueryString, time.Since(start).Microseconds())
+	}
+	if config.QueryStore != nil {
+		config.QueryStore.Add(QueryRecord{
+			Time:        start,
+			ClientInfo:  config.clientInfo(ctx),
+			OriginalSQL: originalSQL,
+			FinalSQL:    finalSQL,
+			TranslateUs: time.Since(start).Microseconds(),
+			Transformed: true,
+		})
 	}
 	return msg, nil
 }
