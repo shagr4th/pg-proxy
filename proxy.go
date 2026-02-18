@@ -38,6 +38,9 @@ type ProxyConfig struct {
 	polyfillLock *sync.RWMutex
 }
 
+const proxyQueryKey = "_proxy_query"
+const proxyErrorKey = "_proxy_error"
+
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
 	remote, ok := parameters["proxy.remote"]
 	if ok && remote != "" {
@@ -151,9 +154,6 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 	}
 }
 
-const proxyQueryKey = "_proxy_query"
-const proxyErrorKey = "_proxy_error"
-
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
 	delete(ctx.ConnInfo.StartupParameters, proxyQueryKey)
 	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
@@ -216,10 +216,13 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
-			query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
 			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
-			if errorFound && queryFound {
-				errorMessage = fmt.Sprintf("pg-proxy error: %v (query: %s) (original postgres error: %s)", queryError, query, errorMessage)
+			if errorFound {
+				query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+				if !queryFound {
+					query = "<unknown>"
+				}
+				errorMessage = fmt.Sprintf("pg-proxy error: %v (query: %s) (postgres error: %s)", queryError, query, err.Value)
 				newFields := append(msg.Fields[0:i], message.ErrorField{
 					Type:  err.Type,
 					Value: errorMessage,
@@ -232,7 +235,7 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 		}
 	}
 	if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
-		log.Printf("ERROR [%s] %s (%s)\n", config.clientInfo(ctx), errorMessage, errorCode)
+		log.Printf("ERROR [%s] %s (error code: %s)\n", config.clientInfo(ctx), errorMessage, errorCode)
 	}
 	return msg, nil
 }
