@@ -57,11 +57,11 @@ CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = numeric, FUNCTION = public.
 `
 }
 
-func (v *ingresTranslator) RenameColumn(index int, column string) (string, error) {
+func (v *ingresTranslator) RenameColumn(index int, column string) string {
 	if column == "?column?" || column == "substring" || column == "trunc" || column == "date" || column == "to_char" || column == "trim" {
 		column = fmt.Sprintf("col%d", index+1)
 	}
-	return column, nil
+	return column
 }
 
 func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error) {
@@ -250,7 +250,7 @@ from information_schema.columns c) as iicolumns`)
 				if nextToken == nil || nextToken.Enclosing == nil {
 					return false
 				}
-				return t.EqualFold("rtrim", "ltrim", "char", "to_char", "charextract", "format",
+				return t.EqualFold("rtrim", "ltrim", "char", "vchar", "varchar", "to_char", "charextract", "format",
 					"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
 					"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze") ||
 					// ifnull(YYY, 'toto') est une string function à cause de 'toto' :

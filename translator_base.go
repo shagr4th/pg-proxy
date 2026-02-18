@@ -14,7 +14,7 @@ import (
 type SqlTranslator interface {
 	Polyfill() (string, string)
 	Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error)
-	RenameColumn(index int, column string) (string, error)
+	RenameColumn(index int, column string) string
 }
 
 type SqlEnclosure struct {
@@ -53,8 +53,8 @@ func (t *isoTranslator) Polyfill() (string, string) {
 	return "", ""
 }
 
-func (t *isoTranslator) RenameColumn(index int, column string) (string, error) {
-	return column, nil
+func (t *isoTranslator) RenameColumn(index int, column string) string {
+	return column
 }
 
 func (t *isoTranslator) Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error) {

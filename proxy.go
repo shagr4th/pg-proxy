@@ -39,8 +39,12 @@ type ProxyConfig struct {
 	polyfillLock *sync.RWMutex
 }
 
-const proxyQueryKey = "_proxy_query"
-const proxyErrorKey = "_proxy_error"
+const (
+	proxyOriginalKey    string = "_proxy_original"
+	proxyTranslationKey string = "_proxy_translation"
+	proxyErrorKey       string = "_proxy_error"
+	proxyTimeKey        string = "_proxy_time"
+)
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
 	remote, ok := parameters["proxy.remote"]
@@ -82,49 +86,30 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	start := time.Now()
-	originalSQL := msg.QueryString
-	ctx.ConnInfo.StartupParameters[proxyQueryKey] = msg.QueryString
+	if config.QueryStore != nil {
+		ctx.ConnInfo.StartupParameters[proxyTimeKey] = start.Format(time.RFC3339)
+		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
+	}
+	ctx.ConnInfo.StartupParameters[proxyOriginalKey] = msg.QueryString
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
-		if config.QueryStore != nil {
-			config.QueryStore.Add(QueryRecord{
-				Time:        start,
-				ClientInfo:  config.clientInfo(ctx),
-				OriginalSQL: originalSQL,
-				Error:       err.Error(),
-			})
-		}
 		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 		}
-		if config.QueryStore != nil {
-			config.QueryStore.Add(QueryRecord{
-				Time:        start,
-				ClientInfo:  config.clientInfo(ctx),
-				OriginalSQL: originalSQL,
-			})
-		}
 		return msg, nil
 	}
 	finalSQL := parsed.Sql()
+	if config.QueryStore != nil {
+		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = finalSQL
+	}
 	msg.QueryString = finalSQL + " --translated from:\n-- " +
 		strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
 	if config.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s in %d µs\n", config.clientInfo(ctx), msg.QueryString, time.Since(start).Microseconds())
-	}
-	if config.QueryStore != nil {
-		config.QueryStore.Add(QueryRecord{
-			Time:        start,
-			ClientInfo:  config.clientInfo(ctx),
-			OriginalSQL: originalSQL,
-			FinalSQL:    finalSQL,
-			TranslateUs: time.Since(start).Microseconds(),
-			Transformed: true,
-		})
 	}
 	return msg, nil
 }
@@ -182,9 +167,27 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 	}
 }
 
+func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
+	originalSQL, ok := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
+	if ok {
+		if config.QueryStore != nil {
+			config.QueryStore.Add(QueryRecord{
+				Time:        ctx.ConnInfo.StartupParameters[proxyTimeKey],
+				ClientInfo:  config.clientInfo(ctx),
+				OriginalSQL: originalSQL,
+				FinalSQL:    ctx.ConnInfo.StartupParameters[proxyTranslationKey],
+				Error:       ctx.ConnInfo.StartupParameters[proxyErrorKey],
+			})
+		}
+		delete(ctx.ConnInfo.StartupParameters, proxyTimeKey)
+		delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
+		delete(ctx.ConnInfo.StartupParameters, proxyOriginalKey)
+		delete(ctx.ConnInfo.StartupParameters, proxyTranslationKey)
+	}
+}
+
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
-	delete(ctx.ConnInfo.StartupParameters, proxyQueryKey)
-	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
+	config.cleanupStore(ctx)
 	if config.Polyfilled {
 		return msg, nil
 	}
@@ -211,6 +214,7 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
+	config.cleanupStore(ctx)
 	if config.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
 	}
@@ -226,12 +230,7 @@ func (config *ProxyConfig) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.A
 
 func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.RowDescription) (*message.RowDescription, error) {
 	for i := range msg.Fields {
-		name, err := config.RenameColumn(i, msg.Fields[i].Name)
-		if err != nil {
-			ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
-			return msg, nil
-		}
-		msg.Fields[i].Name = name
+		msg.Fields[i].Name = config.RenameColumn(i, msg.Fields[i].Name)
 	}
 	ctx.RowDescription = msg
 	return msg, nil
@@ -244,20 +243,11 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
-			query, queryFound := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+			query, queryFound := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
 			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
-			delete(ctx.ConnInfo.StartupParameters, proxyQueryKey)
-			delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
 			if queryFound && !errorFound { // erreur postgres sans traduction en erreur
+				ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Value
 				errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, query)
-				if config.QueryStore != nil {
-					config.QueryStore.Add(QueryRecord{
-						Time:        time.Now(),
-						ClientInfo:  config.clientInfo(ctx),
-						OriginalSQL: query,
-						Error:       err.Value,
-					})
-				}
 			} else if errorFound { // erreur interne du proxy
 				if !queryFound {
 					query = "<unknown>"
@@ -275,6 +265,7 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			errorCode = err.Value
 		}
 	}
+	config.cleanupStore(ctx)
 	if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
 		log.Printf("ERROR [%s] %s (error code: %s)\n", config.clientInfo(ctx), errorMessage, errorCode)
 	}

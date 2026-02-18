@@ -6,21 +6,17 @@ import (
 	"log"
 	"net/http"
 	"sync"
-	"time"
 )
 
 const maxQueryBufferSize = 10000
 
 // QueryRecord holds information about a single SQL query that passed through the proxy.
 type QueryRecord struct {
-	ID          uint64    `json:"id"`
-	Time        time.Time `json:"time"`
-	ClientInfo  string    `json:"client"`
-	OriginalSQL string    `json:"original"`
-	FinalSQL    string    `json:"final"`       // empty when not transformed
-	TranslateUs int64     `json:"translateUs"` // translation duration in microseconds
-	Transformed bool      `json:"transformed"`
-	Error       string    `json:"error"` // translation error, if any
+	Time        string `json:"time"`
+	ClientInfo  string `json:"client"`
+	OriginalSQL string `json:"original"`
+	FinalSQL    string `json:"final"` // empty when not transformed
+	Error       string `json:"error"` // translation error, if any
 }
 
 // QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.
@@ -30,7 +26,6 @@ type QueryStore struct {
 	entries     [maxQueryBufferSize]QueryRecord
 	head        int // next slot to write
 	count       int // number of valid entries (0..maxQueryBufferSize)
-	nextID      uint64
 	subscribers map[uint64]chan QueryRecord
 	nextSubID   uint64
 }
@@ -45,8 +40,6 @@ func NewQueryStore() *QueryStore {
 // and broadcasts to all SSE subscribers.
 func (s *QueryStore) Add(r QueryRecord) {
 	s.mu.Lock()
-	r.ID = s.nextID
-	s.nextID++
 	s.entries[s.head] = r
 	s.head = (s.head + 1) % maxQueryBufferSize
 	if s.count < maxQueryBufferSize {
@@ -201,7 +194,6 @@ const webUIHTML = `<!DOCTYPE html>
   colgroup col:nth-child(3) { width: calc(40% - 140px); }
   colgroup col:nth-child(4) { width: calc(40% - 80px); }
   colgroup col:nth-child(5) { width: 20%; }
-  colgroup col:nth-child(6) { width: 70px; }
   tbody tr.error { border-left: 2px solid var(--red); }
   td.err { color: var(--red); font-size: 11px; }
   thead th { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: 7px 10px; text-align: left; font-size: 11px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; z-index: 1; }
@@ -215,8 +207,6 @@ const webUIHTML = `<!DOCTYPE html>
   td.client { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   td.sql { color: var(--text); }
   td.sql .translated { color: var(--yellow); }
-  td.dur { color: var(--text-dim); font-size: 11px; text-align: right; white-space: nowrap; }
-  td.dur.fast { color: var(--green); }
   #empty { text-align: center; color: var(--text-dim); padding: 60px; font-size: 14px; }
   mark { background: var(--accent-dim); color: var(--accent); border-radius: 2px; }
 </style>
@@ -233,7 +223,7 @@ const webUIHTML = `<!DOCTYPE html>
 <div class="table-wrap" id="tableWrap">
   <table id="queryTable">
     <colgroup>
-      <col><col><col><col><col><col>
+      <col><col><col><col><col>
     </colgroup>
     <thead>
       <tr>
@@ -242,7 +232,6 @@ const webUIHTML = `<!DOCTYPE html>
         <th>Original SQL</th>
         <th>Translated SQL</th>
         <th>Error</th>
-        <th>Duration</th>
       </tr>
     </thead>
     <tbody id="tbody"></tbody>
@@ -297,7 +286,7 @@ const webUIHTML = `<!DOCTYPE html>
   function makeRow(rec, animate) {
     const tr = document.createElement('tr');
     if (rec.error) tr.classList.add('error');
-    else if (rec.transformed) tr.classList.add('transformed');
+    else if (rec.final) tr.classList.add('transformed');
     if (animate) tr.classList.add('new-row');
     tr.dataset.id = rec.id;
     tr.dataset.original = rec.original;
@@ -305,15 +294,12 @@ const webUIHTML = `<!DOCTYPE html>
     tr.dataset.client = rec.client;
     tr.dataset.error = rec.error || '';
 
-    const durClass = rec.translateUs > 0 && rec.translateUs < 5000 ? 'dur fast' : 'dur';
-
     tr.innerHTML =
       '<td class="time">' + formatTime(rec.time) + '</td>' +
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
-      '<td class="sql translated">' + (rec.transformed ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
-      '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>' +
-      '<td class="' + durClass + '">' + (rec.transformed ? formatDur(rec.translateUs) : '') + '</td>';
+      '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
+      '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;
   }
 
