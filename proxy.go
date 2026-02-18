@@ -39,6 +39,9 @@ type ProxyConfig struct {
 	polyfillLock *sync.RWMutex
 }
 
+var _ backend.PGStartupMessageRewriter = (*ProxyConfig)(nil)
+var _ backend.PGResolver = (*ProxyConfig)(nil)
+
 const (
 	proxyOriginalKey    string = "_proxy_original"
 	proxyTranslationKey string = "_proxy_translation"
@@ -94,7 +97,6 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
-		return msg, nil
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
