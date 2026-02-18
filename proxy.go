@@ -168,34 +168,33 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 }
 
 func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
-	originalSQL, ok := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
-	if ok {
+	originalQuery, originalQueryFound := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
+	if originalQueryFound {
 		if config.QueryStore != nil {
 			config.QueryStore.Add(QueryRecord{
 				Time:        ctx.ConnInfo.StartupParameters[proxyTimeKey],
 				ClientInfo:  config.clientInfo(ctx),
-				OriginalSQL: originalSQL,
+				OriginalSQL: originalQuery,
 				FinalSQL:    ctx.ConnInfo.StartupParameters[proxyTranslationKey],
 				Error:       ctx.ConnInfo.StartupParameters[proxyErrorKey],
 			})
 		}
-		delete(ctx.ConnInfo.StartupParameters, proxyTimeKey)
-		delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
 		delete(ctx.ConnInfo.StartupParameters, proxyOriginalKey)
+		delete(ctx.ConnInfo.StartupParameters, proxyTimeKey)
 		delete(ctx.ConnInfo.StartupParameters, proxyTranslationKey)
 	}
+	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
 }
 
-func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
-	config.cleanupStore(ctx)
+func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 	if config.Polyfilled {
-		return msg, nil
+		return
 	}
 	config.polyfillLock.Lock()
 	start := time.Now()
 	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
 	if createPolyfill == "" {
-		return msg, nil
+		return
 	}
 	err := config.sendQueryToServer(ctx, checkPolyfill)
 	if err != nil { // seems polyfill is not installed
@@ -210,14 +209,19 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 	}
 	config.Polyfilled = true
 	config.polyfillLock.Unlock()
+}
+
+func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
+	config.cleanupStore(ctx)
+	config.managePolyfill(ctx)
 	return msg, nil
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
-	config.cleanupStore(ctx)
 	if config.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Client sent termination\n", config.clientInfo(ctx))
 	}
+	config.cleanupStore(ctx)
 	return msg, nil
 }
 
