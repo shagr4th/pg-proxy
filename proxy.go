@@ -196,7 +196,7 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 	}
 	config.polyfillLock.Lock()
 	start := time.Now()
-	checkPolyfill, createPolyfill := config.SqlTranslator.Polyfill()
+	checkPolyfill, createPolyfill := config.Polyfill()
 	if createPolyfill == "" {
 		return
 	}
@@ -357,19 +357,19 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	clientMessageHandlers := proxy.NewClientMessageHandlers()
 	serverMessageHandlers := proxy.NewServerMessageHandlers()
 
-	if config.SqlTranslator != nil {
-		clientMessageHandlers.AddHandleQuery(config.handleQuery)
-		clientMessageHandlers.AddHandleParse(config.handleParse)
-		serverMessageHandlers.AddHandleRowDescription(config.handleRowDescription)
-	}
-
+	clientMessageHandlers.AddHandleQuery(config.handleQuery)
+	clientMessageHandlers.AddHandleParse(config.handleParse)
 	clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
+	serverMessageHandlers.AddHandleRowDescription(config.handleRowDescription)
+	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
 	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
-	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 
 	if config.polyfillLock == nil {
 		config.polyfillLock = &sync.RWMutex{}
+	}
+	if config.SqlTranslator == nil {
+		config.SqlTranslator = IsoTranslator()
 	}
 	return &proxy.Server{
 		TLSConfig:                tlsConfig,

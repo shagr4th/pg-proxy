@@ -44,7 +44,7 @@ Commit: ` + commit)
 	flag.StringVar(&proxyConfig.Remote, "remote", "", "Proxy remote address (default none)")
 	flag.StringVar(&proxyConfig.CertificateFile, "certificate", "", "SSL certificate file *.crt (default none)")
 	flag.StringVar(&proxyConfig.KeyFile, "key", "", "SSL key file *.key (default none)")
-	flag.StringVar(&translator, "translator", "ingres", "Query translator")
+	flag.StringVar(&translator, "translator", "ingres", "Query translator ('ingres' or 'iso')")
 	flag.StringVar(&parameters, "parameters", "{\"datestyle\":\"iso,us\"}", "Startup parameters") // on force datestyle pour simuler le date_format=US par défaut dans la base Ingres
 	flag.IntVar(&webPort, "web-port", 0, "Web UI port for query monitoring (0 = disabled)")
 	flag.StringVar(&webSecret, "web-secret", "", "Web UI secret (default none)")

@@ -87,16 +87,16 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           tag: ${{ gitea.ref_name }}
-          name: Release ${{ gitea.ref_name }}
+          name: ${{ gitea.ref_name }}
           body: |
-            ## Release ${{ gitea.ref_name }}
+            ## ${{ gitea.ref_name }}
 
             ### Downloads
             | Platform      | Architecture | File                                      |
             |---------------|--------------|-------------------------------------------|
-            | Linux         | x86_64       | `*-linux-amd64`                           |
-            | Windows       | x86_64       | `*-windows-amd64.exe`                     |
-            | AIX           | ppc64        | `*-aix-ppc64`                             |
+            | Linux         | x86_64       | `${{ gitea.event.repository.name }}-linux-amd64`                           |
+            | Windows       | x86_64       | `${{ gitea.event.repository.name }}-windows-amd64.exe`                     |
+            | AIX           | ppc64        | `${{ gitea.event.repository.name }}-aix-ppc64`                             |
 
             ### Verify integrity
             ```sh

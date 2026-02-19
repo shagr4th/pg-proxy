@@ -49,11 +49,10 @@ func TestIngres(t *testing.T) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", TestProxyPort))
 	AssertNoError(t, err)
 
-	translator := IngresTranslator()
 	cnxStr := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
 
 	proxyConfig := &ProxyConfig{
-		SqlTranslator:   translator,
+		SqlTranslator:   IngresTranslator(),
 		Verbose:         0,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParameters: map[string]string{
@@ -163,7 +162,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select t.HEUREMAJ + COLUMN1  from TABLE1 t", []string{"100100dummy"})
 		AssertSqlQuery(t, db, "select COLUMN1 + HEUREMAJ from TABLE1 t", []string{"dummy100100"})
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
-		parsed, err := translator.Translate(testQuery, true, false)
+		parsed, err := proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
 		AssertEquals(t, testQuery, false, parsed.Transformed)
 
@@ -209,7 +208,7 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, testQuery, 1, timeResults[0].Day())
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
-		res, err := translator.Translate(testQuery, true, false)
+		res, err := proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
 		AssertEquals(t, testQuery, "create temporary table session_tmp_param on commit preserve rows as select substring((par.param2)::text, 1,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql())
 
