@@ -124,6 +124,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
 		AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10))", 0)
+		AssertSqlExec(t, db, false, "create temporary table TABLE3 (COLUMN2 CHAR(10));SET pg.testvar = 1; create temporary table TABLE4 (COLUMN2 VARCHAR(10));", 0)
 
 		AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
 		AssertSqlQuery(t, db, "SELECT charextract('ABC', 2)", []string{"B"})

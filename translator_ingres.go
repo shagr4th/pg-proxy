@@ -181,16 +181,24 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		if LOCKMODE != nil {
 			next := token.Next
 			if next != nil {
+				key := "dummy"
+				value := "1"
+				if next.Search("nolock", nil, true) != nil {
+					key = "readlock"
+					value = "'nolock'"
+				}
 				next.Cut(nil)
-				token.Append(" ", "pg.dummy", "=", "1")
+				token.Append(" ", "pg."+key, "=", value)
 			}
 		}
 	} else if token.EqualFold("MODIFY") {
 		token.SetValue("SET")
 		next := token.Next
 		if next != nil {
+			key := "dummy"
+			value := "1"
 			next.Cut(nil)
-			token.Append(" ", "pg.dummy", "=", "1")
+			token.Append(" ", "pg."+key, "=", value)
 		}
 	} else if token.EqualFold("COPY") {
 		INTO := token.Search("INTO", nil, true)
