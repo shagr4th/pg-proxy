@@ -26,15 +26,16 @@ import (
 )
 
 type ProxyConfig struct {
-	Host              string
-	Port              int
-	Remote            string
-	CertificateFile   string
-	KeyFile           string
-	Verbose           int
-	Polyfilled        bool
-	StartupParameters map[string]string
-	QueryStore        *QueryStore
+	Host               string
+	Port               int
+	Remote             string
+	CertificateFile    string
+	KeyFile            string
+	Verbose            int
+	AddOriginalComment bool
+	Polyfilled         bool
+	StartupParameters  map[string]string
+	QueryStore         *QueryStore
 	SqlTranslator
 	polyfillLock *sync.RWMutex
 }
@@ -104,12 +105,13 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		}
 		return msg, nil
 	}
-	finalSQL := parsed.Sql()
+	msg.QueryString = parsed.Sql()
 	if config.QueryStore != nil {
-		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = finalSQL
+		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = msg.QueryString
 	}
-	msg.QueryString = finalSQL + " --translated from:\n-- " +
-		strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
+	if config.AddOriginalComment {
+		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
+	}
 	if config.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s in %d µs\n", config.clientInfo(ctx), msg.QueryString, time.Since(start).Microseconds())
 	}
