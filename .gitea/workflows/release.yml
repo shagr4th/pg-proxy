@@ -53,7 +53,7 @@ jobs:
           CGO_ENABLED: 0
         run: |
           go build \
-            -ldflags="-s -w -X main.commit=${{ gitea.ref_name }}" \
+            -ldflags="-X main.commit=${{ gitea.ref_name }}" \
             -trimpath \
             -o ${{ matrix.asset_name }} \
             ./...
