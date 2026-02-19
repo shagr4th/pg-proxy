@@ -263,7 +263,8 @@ func (t *SqlToken) Search(value string, until *SqlToken, sameEnclosure bool) *Sq
 		until = t.Enclosure.End
 	}
 
-	for i := t.Index + 1; i >= 0 && i < len(t.query.tokens) && t.query.tokens[i] != until; i = i + 1 {
+	lastTokenIndex := t.Last().Index + 1
+	for i := t.Index + 1; i >= 0 && i < lastTokenIndex && t.query.tokens[i] != until; i = i + 1 {
 		if (!sameEnclosure || t.query.tokens[i].Enclosure == t.Enclosure) && t.query.tokens[i].EqualFold(value) {
 			return t.query.tokens[i]
 		}

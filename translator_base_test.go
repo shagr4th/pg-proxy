@@ -30,6 +30,19 @@ func TestEnclosingFunction(t *testing.T) {
 	}
 }
 
+func TestSeparators(t *testing.T) {
+	parsed, err := ParseSql("SELECT 1; SELECT 1 + 2;;", "none")
+	AssertEquals(t, "Separators count", 3, len(parsed.separators))
+	AssertNoError(t, err)
+	found := parsed.First().Search("1", nil, true)
+	AssertEquals(t, "First query search", "1", found.Value)
+	separator := found.Next
+	AssertEquals(t, "Check Separator", true, separator.IsSeparator())
+	AssertEquals(t, "Last is the same", found, separator.Last())
+	found = separator.Next.Search("2", nil, true)
+	AssertEquals(t, "Second query search", "2", found.Value)
+}
+
 func TestMixedCase(t *testing.T) {
 	AssertEquals(t, "AB", IsMixedCase("AB"), false)
 	AssertEquals(t, "aB", IsMixedCase("aB"), true)
