@@ -55,7 +55,7 @@ func TestIngres(t *testing.T) {
 		SqlTranslator:   IngresTranslator(),
 		Verbose:         0,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
-		StartupParameters: map[string]string{
+		StartupParametersOverride: map[string]string{
 			"datestyle": "iso,us", // forcage du datestyle pour simuler le date_format=US par défaut dans la base Ingres
 		},
 	}

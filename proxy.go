@@ -26,16 +26,16 @@ import (
 )
 
 type ProxyConfig struct {
-	Host               string
-	Port               int
-	Remote             string
-	CertificateFile    string
-	KeyFile            string
-	Verbose            int
-	AddOriginalComment bool
-	Polyfilled         bool
-	StartupParameters  map[string]string
-	QueryStore         *QueryStore
+	Host                      string
+	Port                      int
+	Remote                    string
+	CertificateFile           string
+	KeyFile                   string
+	Verbose                   int
+	KeepOriginal              bool
+	Polyfilled                bool
+	StartupParametersOverride map[string]string
+	QueryStore                *QueryStore
 	SqlTranslator
 	polyfillLock *sync.RWMutex
 }
@@ -71,8 +71,8 @@ func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, p
 }
 
 func (config *ProxyConfig) RewriteParameters(original map[string]string) map[string]string {
-	if config.StartupParameters != nil {
-		maps.Copy(original, config.StartupParameters)
+	if config.StartupParametersOverride != nil {
+		maps.Copy(original, config.StartupParametersOverride)
 	}
 	return original
 }
@@ -109,7 +109,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	if config.QueryStore != nil {
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = msg.QueryString
 	}
-	if config.AddOriginalComment {
+	if config.KeepOriginal {
 		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
 	}
 	if config.Verbose&2 == 2 {

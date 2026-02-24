@@ -33,19 +33,19 @@ Commit: ` + commit)
 	}
 
 	var translator string
-	var parameters string
+	var startupOverride string
 	var webPort int
 	var webSecret string
 	flag.StringVar(&proxyConfig.Host, "host", "", "Listener host (default all local interfaces)")
 	flag.IntVar(&proxyConfig.Port, "port", 5432, "Listener port")
 	flag.IntVar(&proxyConfig.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connections, 2 = translated queries, 4 = all queries (default 0)")
 	flag.BoolVar(&proxyConfig.Polyfilled, "polyfill", true, "Polyfills already applied by a system account")
-	flag.BoolVar(&proxyConfig.AddOriginalComment, "originalcomment", true, "Add at the end of the translated query, the original query in a multiline SQL comment")
+	flag.BoolVar(&proxyConfig.KeepOriginal, "keeporiginal", true, "Keep the original query at the end in a multiline SQL comment")
 	flag.StringVar(&proxyConfig.Remote, "remote", "", "Proxy remote address (default none)")
 	flag.StringVar(&proxyConfig.CertificateFile, "certificate", "", "SSL certificate file *.crt (default none)")
 	flag.StringVar(&proxyConfig.KeyFile, "key", "", "SSL key file *.key (default none)")
-	flag.StringVar(&translator, "translator", "ingres", "Query translator ('ingres' or 'iso')")
-	flag.StringVar(&parameters, "parameters", "{\"datestyle\":\"iso,us\"}", "Startup parameters") // on force datestyle pour simuler le date_format=US par défaut dans la base Ingres
+	flag.StringVar(&translator, "translator", "iso", "Query translator ('ingres' or 'iso')")
+	flag.StringVar(&startupOverride, "override", "{}", "Startup parameters override, in JSON format")
 	flag.IntVar(&webPort, "web-port", 0, "Web UI port for query monitoring (0 = disabled)")
 	flag.StringVar(&webSecret, "web-secret", "", "Web UI secret (default none)")
 	flag.Parse()
@@ -53,8 +53,8 @@ Commit: ` + commit)
 	if translator == "ingres" {
 		proxyConfig.SqlTranslator = IngresTranslator()
 	}
-	if parameters != "" {
-		err := json.Unmarshal([]byte(parameters), &proxyConfig.StartupParameters)
+	if startupOverride != "" {
+		err := json.Unmarshal([]byte(startupOverride), &proxyConfig.StartupParametersOverride)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -78,7 +78,8 @@ Commit: ` + commit)
 	if len(proxyConfig.Remote) > 0 {
 		banner = fmt.Sprintf("proxying to %s", proxyConfig.Remote)
 	}
-	log.Printf("[Listening on %s:%d with %s translator] "+banner, proxyConfig.Host, proxyConfig.Port, translator)
+	b, _ := json.Marshal(proxyConfig.StartupParametersOverride)
+	log.Printf("[Listening on %s:%d with %s translator and %s startup parameters] "+banner, proxyConfig.Host, proxyConfig.Port, translator, string(b))
 	go server.Serve(ln)
 
 	sigs := make(chan os.Signal, 1)

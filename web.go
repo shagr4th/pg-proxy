@@ -259,13 +259,6 @@ const webUIHTML = `<!DOCTYPE html>
     return d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
   }
 
-  function formatDur(us) {
-    if (us === 0) return '';
-    if (us < 1000) return us + ' µs';
-    if (us < 1000000) return (us / 1000).toFixed(1) + ' ms';
-    return (us / 1000000).toFixed(2) + ' s';
-  }
-
   function esc(str) {
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
