@@ -89,6 +89,8 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 
 func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, polyfilled bool, withPlaceHolder bool) (*SqlToken, error) {
 	var lastDDLToken *SqlToken = nil
+	var copyToken *SqlToken = nil
+	var copyIntoToken *SqlToken = nil
 
 	// check des commandes
 	if token.EqualFold("CREATE", "DECLARE", "ALTER") {
@@ -201,9 +203,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			token.Append(" ", "pg."+key, "=", value)
 		}
 	} else if token.EqualFold("COPY") {
-		INTO := token.Search("INTO", nil, true)
-		if INTO != nil {
-			INTO.SetValue(INTO.Value[2:])
+		copyToken = token
+		copyIntoToken = token.Search("INTO", nil, true)
+		if copyIntoToken != nil {
+			copyIntoToken.SetValue(copyIntoToken.Value[2:])
 		}
 	}
 
@@ -494,6 +497,86 @@ from information_schema.columns c) as iicolumns`)
 				Append(" ", "+", " ", "CAST", "(", "(", "(").
 				Paste(addition...).
 				Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
+		} else if token.Prev != nil && (token.Prev == copyToken || (token.Prev.EqualFold("table") && token.Prev.Prev == copyToken)) {
+			// https://docs.actian.com/openroad/6.2/index.html#page/LangRef/Copy_Statement.htm
+			// https://www.postgresql.org/docs/current/sql-copy.html
+
+			// on est sur un COPY TABLE (...), on convertit les définitions de colonne vers une syntaxe compatible Postgres
+			// COPY TABLE (col1 type, col2 type)
+			// =>
+			// COPY (SELECT col1, col2 FROM TABLE)
+			var delimiter string
+			var globalNull string
+			for i := 0; i < len(enclosure.Heads); i++ {
+				end := enclosure.End
+				if i < len(enclosure.Heads)-1 {
+					end = enclosure.Heads[i+1].Prev
+				}
+				hasEquals := enclosure.Heads[i].Search("=", end, true)
+				/*columnName := enclosure.Heads[i].Value
+				var columnWithNull string
+				var columnTypeToken *SqlToken = nil
+				var columnSize int = -1*/
+				if hasEquals != nil {
+					cutted := hasEquals.Cut(end)
+					for _, c := range cutted {
+						if c.EqualFold("=") || c.Type == sqllexer.SPACE {
+							continue
+						}
+						val := strings.ToLower(c.Value)
+						if delimiter == "" && strings.HasSuffix(val, "tab") {
+							delimiter = "'\\t'"
+						} else if delimiter == "" && strings.HasSuffix(val, "colon") {
+							delimiter = "':'"
+						} else if delimiter == "" && strings.HasSuffix(val, "ssv") {
+							delimiter = "';'"
+						} else if delimiter == "" && (strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv")) {
+							delimiter = "','"
+						} else if delimiter == "" && strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
+							delimiter = c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
+						}
+
+						if c.EqualFold("with") && c.Next != nil && c.Next.EqualFold("null") && c.Next.Next != nil &&
+							c.Next.Next.EqualFold("(") && c.Next.Next.Next != nil && c.Next.Next.Next.Type == sqllexer.STRING {
+							//columnWithNull = c.Next.Next.Next.Value
+							break
+						}
+						/*if columnTypeToken == nil {
+							columnTypeToken = c
+						} else if c.Type == sqllexer.NUMBER {
+							columnSize, _ = strconv.Atoi(c.Value)
+						}*/
+					}
+				}
+				globalNull = "']^NULL^['"
+				/*if columnWithNull != "" {
+					enclosure.Heads[i].Prev.Append("COALESCE", "(")
+					if end != nil && end.Prev != nil {
+						end.Prev.Append(",", columnWithNull, ")")
+					}
+				}
+				if columnTypeToken != nil {
+					log.Printf("%s = %s (%d)\n", columnName, columnTypeToken.Value, columnSize)
+				}*/
+			}
+			if token.Prev != nil && token.Prev.EqualFold("table") {
+				token.Prev.Cut(token)
+			}
+			if copyIntoToken != nil {
+				token.Cut(token.Next)
+				enclosure.Start.Append("SELECT", " ")
+				if enclosure.End != nil && enclosure.End.Prev != nil {
+					enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
+				}
+			}
+			t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", "csv")
+			if delimiter != "" {
+				t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
+			}
+			if globalNull != "" {
+				t = t.Append(",", "NULL", " ", globalNull)
+			}
+			t = t.Append(")")
 		}
 	}
 }

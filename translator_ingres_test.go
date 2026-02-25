@@ -148,7 +148,18 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, testQuery, "overr1", columns[2])
 		AssertEquals(t, testQuery, "col4", columns[3])
 
-		AssertSqlExec(t, db, false, "COPY TABLE2 INTO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
+		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
+
+		AssertSqlExec(t, db, false, "COPY TABLE1 INTO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '/tmp/test'", 1)
+		tmpTest, err := os.ReadFile("/tmp/test")
+		AssertNoError(t, err)
+		AssertEquals(t, "tmpTest", "dummy:100100\n", string(tmpTest))
+		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
 
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
