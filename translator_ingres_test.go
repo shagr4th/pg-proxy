@@ -121,7 +121,7 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
-		AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
+		AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, column2 char(5), heuremaj CHAR(6)) WITH NORECOVERY", 0)
 		AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10))", 0)
 		AssertSqlExec(t, db, false, "create temporary table TABLE3 (COLUMN2 CHAR(10));SET pg.testvar = 1; create temporary table TABLE4 (COLUMN2 VARCHAR(10));", 0)
 
@@ -135,7 +135,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "drop table if exists test_table6", 0)
 		AssertSqlExec(t, db, true, "drop table if exists trt_recepisse", 0)
 
-		AssertSqlExec(t, db, true, "INSERT INTO TABLE1 VALUES ('dummy', '100100')", 1)
+		AssertSqlExec(t, db, true, "INSERT INTO TABLE1 VALUES ('dummy', NULL, '100100')", 1)
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE2 VALUES ('dummy')", 1)
 		testQuery := "SELECT t.column1, charextract (456, 2), charextract (456, 2) as overr1, 10 from Table1 t where colUMN1 = 'dummy'"
 		rows, err := db.Query(testQuery)

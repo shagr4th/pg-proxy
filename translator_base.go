@@ -41,6 +41,8 @@ type SqlQuery struct {
 	separators           []*SqlToken
 	Transformed          bool
 	PlaceholderPositions []int
+	Prefix               string
+	Suffix               string
 }
 
 type isoTranslator struct {
@@ -204,6 +206,9 @@ Retourne une requête SQL
 */
 func (q *SqlQuery) Sql() string {
 	n := 0
+	if q.Prefix != "" {
+		n += len(q.Prefix)
+	}
 	for i, token := range q.tokens {
 		if token.Type == sqllexer.SPACE {
 			token.SetValue(" ")
@@ -216,11 +221,20 @@ func (q *SqlQuery) Sql() string {
 		}
 		n += len(token.Value)
 	}
+	if q.Suffix != "" {
+		n += len(q.Suffix)
+	}
 
 	var b strings.Builder
 	b.Grow(n)
+	if q.Prefix != "" {
+		b.WriteString(q.Prefix)
+	}
 	for _, token := range q.tokens {
 		b.WriteString(token.Value)
+	}
+	if q.Suffix != "" {
+		b.WriteString(q.Suffix)
 	}
 	return strings.TrimSpace(b.String())
 }
