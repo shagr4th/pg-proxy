@@ -196,13 +196,24 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			}
 		}
 	} else if token.EqualFold("MODIFY") {
-		token.SetValue("SET")
-		next := token.Next
-		if next != nil {
-			key := "dummy"
-			value := "1"
-			next.Cut(nil)
-			token.Append(" ", "pg."+key, "=", value)
+		tableToken := token.Next
+		if tableToken != nil {
+			WITH := token.Search("WITH", nil, true)
+			if WITH != nil {
+				_ = WITH.Cut(nil) // TODO: convertir ce qui peut l'être ?
+			}
+			on := tableToken.Search("ON", nil, true)
+			if on != nil {
+				token.Value = "CREATE"
+				unique := tableToken.Search("UNIQUE", nil, true)
+				if unique != nil {
+					tableToken.Cut(unique)
+				} else {
+					tableToken.Cut(on)
+				}
+				on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", fmt.Sprintf("midx_%s", tableToken.Value))
+				on.Append(" ", tableToken.Value, "(").Last().Append(")")
+			}
 		}
 	} else if token.EqualFold("COPY") {
 		copyToken = token
