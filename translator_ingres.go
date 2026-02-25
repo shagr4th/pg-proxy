@@ -544,11 +544,14 @@ from information_schema.columns c) as iicolumns`)
 							delimiter = "';'"
 						} else if delimiter == "" && (strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv")) {
 							delimiter = "','"
-						} else if delimiter == "" && strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
-							delimiter = c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
-							if strings.HasPrefix(delimiter, "d") {
+						} else if strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
+							coldelimiter := c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
+							if strings.HasPrefix(coldelimiter, "'d") {
 								columnDummy = true
-								delimiter = "'" + delimiter[len(delimiter)-2:]
+								coldelimiter = "'" + coldelimiter[len(coldelimiter)-2:]
+							}
+							if delimiter == "" {
+								delimiter = coldelimiter
 							}
 						}
 
@@ -559,9 +562,7 @@ from information_schema.columns c) as iicolumns`)
 						}
 						if columnTypeToken == nil {
 							columnTypeToken = c
-							if strings.HasPrefix(columnTypeToken.Value, "d") {
-								columnDummy = true
-							}
+							columnDummy = columnDummy || strings.HasPrefix(columnTypeToken.Value, "d")
 						} else if columnSize == -1 && c.Type == sqllexer.NUMBER {
 							columnSize, _ = strconv.Atoi(c.Value)
 						}
