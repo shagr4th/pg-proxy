@@ -524,9 +524,9 @@ from information_schema.columns c) as iicolumns`)
 					end = enclosure.Heads[i+1].Prev
 				}
 				hasEquals := enclosure.Heads[i].Search("=", end, true)
-				/*columnName := enclosure.Heads[i].Value
+				//columnName := enclosure.Heads[i].Value
 				var columnWithNull string
-				var columnTypeToken *SqlToken = nil
+				/*var columnTypeToken *SqlToken = nil
 				var columnSize int = -1*/
 				if hasEquals != nil {
 					cutted := hasEquals.Cut(end)
@@ -549,7 +549,7 @@ from information_schema.columns c) as iicolumns`)
 
 						if c.EqualFold("with") && c.Next != nil && c.Next.EqualFold("null") && c.Next.Next != nil &&
 							c.Next.Next.EqualFold("(") && c.Next.Next.Next != nil && c.Next.Next.Next.Type == sqllexer.STRING {
-							//columnWithNull = c.Next.Next.Next.Value
+							columnWithNull = c.Next.Next.Next.Value
 							break
 						}
 						/*if columnTypeToken == nil {
@@ -559,7 +559,9 @@ from information_schema.columns c) as iicolumns`)
 						}*/
 					}
 				}
-				globalNull = "']^NULL^['"
+				if globalNull == "" && columnWithNull != "" {
+					globalNull = columnWithNull
+				}
 				/*if columnWithNull != "" {
 					enclosure.Heads[i].Prev.Append("COALESCE", "(")
 					if end != nil && end.Prev != nil {

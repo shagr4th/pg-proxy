@@ -136,7 +136,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "drop table if exists trt_recepisse", 0)
 
 		AssertSqlExec(t, db, true, "INSERT INTO TABLE1 VALUES ('dummy', '100100')", 1)
-		AssertSqlExec(t, db, true, "INSERT INTO TABLE2 VALUES ('dummy')", 1)
+		AssertSqlExec(t, db, true, "INSERT INTO TABLE2 VALUES ('dummy'),(NULL)", 2)
 		testQuery := "SELECT t.column1, charextract (456, 2), charextract (456, 2) as overr1, 10 from Table1 t where colUMN1 = 'dummy'"
 		rows, err := db.Query(testQuery)
 		AssertNoError(t, err)
@@ -160,6 +160,13 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, "tmpTest", "dummy:100100\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
+
+		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '/tmp/test'", 2)
+		tmpTest, err = os.ReadFile("/tmp/test")
+		AssertNoError(t, err)
+		AssertEquals(t, "tmpTest", "dummy     \nbouh\n", string(tmpTest))
+		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '/tmp/test'", 2)
 
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
