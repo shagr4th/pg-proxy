@@ -159,7 +159,7 @@ func TestIngres(t *testing.T) {
 		AssertNoError(t, err)
 		AssertEquals(t, "tmpTest", "dummy:100100\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
 
 		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '/tmp/test'", 2)
 		tmpTest, err = os.ReadFile("/tmp/test")

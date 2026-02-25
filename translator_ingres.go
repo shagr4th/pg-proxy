@@ -519,17 +519,18 @@ from information_schema.columns c) as iicolumns`)
 			var delimiter string
 			var globalNull string
 			for i := 0; i < len(enclosure.Heads); i++ {
-				end := enclosure.End
+				endOfHead := enclosure.End
 				if i < len(enclosure.Heads)-1 {
-					end = enclosure.Heads[i+1].Prev
+					endOfHead = enclosure.Heads[i+1].Prev
 				}
-				hasEquals := enclosure.Heads[i].Search("=", end, true)
+				hasEquals := enclosure.Heads[i].Search("=", endOfHead, true)
 				//columnName := enclosure.Heads[i].Value
 				var columnWithNull string
-				/*var columnTypeToken *SqlToken = nil
-				var columnSize int = -1*/
+				var columnTypeToken *SqlToken = nil
+				var columnSize int = -1
+				var columnDummy = false
 				if hasEquals != nil {
-					cutted := hasEquals.Cut(end)
+					cutted := hasEquals.Cut(endOfHead)
 					for _, c := range cutted {
 						if c.EqualFold("=") || c.Type == sqllexer.SPACE {
 							continue
@@ -545,6 +546,10 @@ from information_schema.columns c) as iicolumns`)
 							delimiter = "','"
 						} else if delimiter == "" && strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
 							delimiter = c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
+							if strings.HasPrefix(delimiter, "d") {
+								columnDummy = true
+								delimiter = "'" + delimiter[len(delimiter)-2:]
+							}
 						}
 
 						if c.EqualFold("with") && c.Next != nil && c.Next.EqualFold("null") && c.Next.Next != nil &&
@@ -552,25 +557,22 @@ from information_schema.columns c) as iicolumns`)
 							columnWithNull = c.Next.Next.Next.Value
 							break
 						}
-						/*if columnTypeToken == nil {
+						if columnTypeToken == nil {
 							columnTypeToken = c
-						} else if c.Type == sqllexer.NUMBER {
+							if strings.HasPrefix(columnTypeToken.Value, "d") {
+								columnDummy = true
+							}
+						} else if columnSize == -1 && c.Type == sqllexer.NUMBER {
 							columnSize, _ = strconv.Atoi(c.Value)
-						}*/
+						}
 					}
 				}
 				if globalNull == "" && columnWithNull != "" {
 					globalNull = columnWithNull
 				}
-				/*if columnWithNull != "" {
-					enclosure.Heads[i].Prev.Append("COALESCE", "(")
-					if end != nil && end.Prev != nil {
-						end.Prev.Append(",", columnWithNull, ")")
-					}
+				if columnDummy && endOfHead != nil {
+					enclosure.Heads[i].Cut(endOfHead.Next)
 				}
-				if columnTypeToken != nil {
-					log.Printf("%s = %s (%d)\n", columnName, columnTypeToken.Value, columnSize)
-				}*/
 			}
 			if token.Prev != nil && token.Prev.EqualFold("table") {
 				token.Prev.Cut(token)
