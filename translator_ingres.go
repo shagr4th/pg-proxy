@@ -526,6 +526,7 @@ from information_schema.columns c) as iicolumns`)
 				delimiter string
 			}, 0)
 			columnNames := make([]string, 0)
+			noDelimiterStart := 1
 			for i := 0; i < len(enclosure.Heads); i++ {
 				end := enclosure.End
 				if i < len(enclosure.Heads)-1 {
@@ -585,6 +586,11 @@ from information_schema.columns c) as iicolumns`)
 						if end != nil && end.Prev != nil {
 							end.Prev.Append(",", columnDefs[i].withNull, ")")
 						}
+					} else if columnDefs[i].size > 0 { // right(format('%s', x), 2)
+						enclosure.Heads[i].Prev.Append("RIGHT", "(", "FORMAT", "(", "'%s'", ",")
+						if end != nil && end.Prev != nil {
+							end.Prev.Append(")", ",", fmt.Sprint(columnDefs[i].size), ")")
+						}
 					}
 					if columnDefs[i].delimiter != "" {
 						if end != nil && end.Prev != nil {
@@ -597,7 +603,10 @@ from information_schema.columns c) as iicolumns`)
 				} else {
 					enclosure.Heads[i].Value = "parts[" + fmt.Sprint(i+1) + "]"
 					if columnDefs[i].size > 0 && columnDefs[i].delimiter == "" && i < len(columnDefs)-1 {
-						enclosure.Heads[i].Value = "substring(" + enclosure.Heads[i].Value + ", 1, " + fmt.Sprint(columnDefs[i].size) + ")"
+						enclosure.Heads[i].Value = "substring(" + enclosure.Heads[i].Value + fmt.Sprintf(", %d, ", noDelimiterStart) + fmt.Sprint(columnDefs[i].size) + ")"
+						noDelimiterStart += columnDefs[i].size
+					} else {
+						noDelimiterStart = 1
 					}
 					if columnDefs[i].withNull != "" {
 						enclosure.Heads[i].Prev.Append("NULLIF", "(")
@@ -609,9 +618,9 @@ from information_schema.columns c) as iicolumns`)
 						end.Prev.Append(" ", "AS", " ", columnName)
 					}
 				}
-				if columnDefs[i].typeToken != nil {
+				/*if columnDefs[i].typeToken != nil {
 					log.Printf("%s = %s (%d)\n", columnName, columnDefs[i].typeToken.Value, columnDefs[i].size)
-				}
+				}*/
 			}
 			if copyIntoToken == nil && copyFromToken != nil {
 				parsed.Prefix = "DROP TABLE IF EXISTS copy_staging; CREATE TEMP TABLE copy_staging(line text);"
@@ -636,7 +645,6 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.End.Set(sqllexer.SPACE, " ")
 			}
 			log.Printf("-- %s\n", parsed.Sql())
-
 		}
 	}
 }

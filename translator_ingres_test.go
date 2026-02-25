@@ -161,6 +161,13 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
 
+		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) with null('bouh'), COLUMN2 = char(06)tab with null('bouh'), heuremaj = CHAR(6)) INTO '/tmp/test'", 1)
+		tmpTest, err = os.ReadFile("/tmp/test")
+		AssertNoError(t, err)
+		AssertEquals(t, "tmpTest", "dummybouh\t100100\n", string(tmpTest))
+		//AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
+		//AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
+
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
 		AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})
