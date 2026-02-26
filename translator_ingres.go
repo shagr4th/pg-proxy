@@ -224,6 +224,9 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
 		}
 	} else if token.EqualFold("EXECUTE") {
+		if token.Next != nil && token.Next.EqualFold("PROCEDURE") {
+			token.Next.Cut(token.Next.Next)
+		}
 		token.SetValue("CALL")
 	}
 
