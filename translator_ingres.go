@@ -202,7 +202,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			}
 			on := tableToken.Search("ON", nil, true)
 			if on != nil {
-				token.Value = "CREATE"
+				token.SetValue("CREATE")
 				unique := tableToken.Search("UNIQUE", nil, true)
 				if unique != nil {
 					tableToken.Cut(unique)
@@ -220,7 +220,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
 		}
 	} else if token.EqualFold("EXECUTE") {
-		token.Value = "CALL"
+		token.SetValue("CALL")
 	}
 
 	for { // après la gestion des commandes SQL, parcours de chaque token non vide
