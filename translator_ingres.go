@@ -92,6 +92,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 	var copyToken *SqlToken = nil
 	var copyIntoToken *SqlToken = nil
 
+	if token == nil {
+		return token, nil
+	}
+
 	// check des commandes
 	if token.EqualFold("CREATE", "DECLARE", "ALTER") {
 		lastDDLToken = token.Last()

@@ -119,6 +119,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
 		AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
 
+		AssertSqlExec(t, db, true, "", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
 		AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)

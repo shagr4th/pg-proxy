@@ -493,8 +493,11 @@ func AssertSqlQuery[K comparable](t withFatal, db *sql.DB, query string, expecte
 func AssertSqlExec(t withFatal, db *sql.DB, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
 	res, err := Exec(db, prepare, query, args...)
 	AssertNoError(t, err, query)
-	rowsAffected, err := res.RowsAffected()
-	AssertNoError(t, err, query)
-	AssertEquals(t, query, expectedRowsAffected, rowsAffected)
-	return rowsAffected
+	if query != "" {
+		rowsAffected, err := res.RowsAffected()
+		AssertNoError(t, err, query)
+		AssertEquals(t, query, expectedRowsAffected, rowsAffected)
+		return rowsAffected
+	}
+	return 0
 }
