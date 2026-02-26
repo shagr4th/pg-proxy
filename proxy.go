@@ -175,8 +175,18 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 	originalQuery, originalQueryFound := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
 	if originalQueryFound {
 		if config.QueryStore != nil {
+			start, hasStart := ctx.ConnInfo.StartupParameters[proxyTimeKey]
+			duration := ""
+			if hasStart && start != "" {
+				startTime, err := time.Parse(time.RFC3339, start)
+				if err == nil {
+					millis := time.Since(startTime).Milliseconds()
+					duration = fmt.Sprint(millis)
+				}
+			}
 			config.QueryStore.Add(QueryRecord{
-				Time:        ctx.ConnInfo.StartupParameters[proxyTimeKey],
+				Time:        start,
+				Duration:    duration,
 				ClientInfo:  config.clientInfo(ctx),
 				OriginalSQL: originalQuery,
 				FinalSQL:    ctx.ConnInfo.StartupParameters[proxyTranslationKey],

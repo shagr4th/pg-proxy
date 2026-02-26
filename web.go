@@ -13,6 +13,7 @@ const maxQueryBufferSize = 2000
 // QueryRecord holds information about a single SQL query that passed through the proxy.
 type QueryRecord struct {
 	Time        string `json:"time"`
+	Duration    string `json:"duration"`
 	ClientInfo  string `json:"client"`
 	OriginalSQL string `json:"original"`
 	FinalSQL    string `json:"final"` // empty when not transformed

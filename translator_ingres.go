@@ -219,6 +219,8 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		if copyIntoToken != nil {
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
 		}
+	} else if token.EqualFold("EXECUTE") {
+		token.Value = "CALL"
 	}
 
 	for { // après la gestion des commandes SQL, parcours de chaque token non vide
@@ -590,14 +592,17 @@ from information_schema.columns c) as iicolumns`)
 					enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
 				}
 			}
-			t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", "csv")
-			if delimiter != "" {
-				t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
+			copyWithToken := token.Search("WITH", nil, true)
+			if copyWithToken == nil {
+				t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", "csv")
+				if delimiter != "" {
+					t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
+				}
+				if globalNull != "" {
+					t = t.Append(",", "NULL", " ", globalNull)
+				}
+				t = t.Append(")")
 			}
-			if globalNull != "" {
-				t = t.Append(",", "NULL", " ", globalNull)
-			}
-			t = t.Append(")")
 		}
 	}
 }
