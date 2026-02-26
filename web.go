@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const maxQueryBufferSize = 10000
+const maxQueryBufferSize = 2000
 
 // QueryRecord holds information about a single SQL query that passed through the proxy.
 type QueryRecord struct {
