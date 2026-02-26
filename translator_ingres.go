@@ -228,6 +228,16 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			token.Next.Cut(token.Next.Next)
 		}
 		token.SetValue("CALL")
+		if token.Next != nil && token.Next.Next != nil && token.Next.Next.Enclosing != nil && len(token.Next.Next.Enclosing.Heads) > 0 {
+			equals := token.Next.Next.Enclosing.Heads[0]
+			for {
+				equals := equals.Search("=", token.Next.Next.Enclosing.End, true)
+				if equals == nil {
+					break
+				}
+				equals.SetValue("=>")
+			}
+		}
 	}
 
 	for { // après la gestion des commandes SQL, parcours de chaque token non vide

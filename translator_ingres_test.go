@@ -193,6 +193,11 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM (SELECT ? AS CC) AS T SET COLUMN1 =? + charextract(T.CC, ?)", 1, "ABC", "X", 3) // test inversion ordre des param placeholder
 		AssertSqlQuery(t, db, "SELECT COLUMN1 FROM TABLE1 LIMIT 1", []string{"XC"})
 
+		testQuery = "EXECUTE PROCEDURE TOTO (ARG = 't')"
+		parsed, err = proxyConfig.Translate(testQuery, true, false)
+		AssertNoError(t, err)
+		AssertEquals(t, testQuery, "CALL TOTO (ARG => 't')", parsed.Sql())
+
 		now := time.Now()
 
 		testQuery = "select date('today')" // pareil que current_date
