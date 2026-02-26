@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -84,10 +83,6 @@ func ParseSql(query string, dbms sqllexer.DBMSType) (*SqlQuery, error) {
 			Value: lexerToken.Value,
 		}
 		q.tokens = append(q.tokens, token)
-	}
-
-	if len(q.tokens) == 0 {
-		return nil, errors.New("{compat} No tokens")
 	}
 
 	q.reindex()
