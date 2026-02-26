@@ -130,6 +130,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT charextract (charextract('ABC', 2), 1)", []string{"B"})
 		AssertSqlQuery(t, db, "SELECT charextract (456, 2)", []string{"5"})
 		AssertSqlQuery(t, db, "SELECT date_part('mo', TO_DATE('20170503','YYYYMMDD'))", []int{5})
+		AssertSqlQuery(t, db, "SELECT smallint($1) + int($2)", []string{"-3"}, "01", "-4")
 		AssertSqlExec(t, db, true, "drop table if exists test_table4", 0)
 		AssertSqlExec(t, db, true, "drop table if exists test_table5", 0)
 		AssertSqlExec(t, db, true, "drop table if exists test_table6", 0)

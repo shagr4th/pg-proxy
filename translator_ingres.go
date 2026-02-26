@@ -381,8 +381,14 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.End.Prev.Append(",", "1")
 			}
 
-		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") {
-			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
+		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") ||
+			token.EqualFold("smallint") || token.EqualFold("int") { // Fonctions de cast
+			castToType := strings.ToLower(token.Value)
+			isChar := strings.HasSuffix(castToType, "char")
+			if isChar {
+				castToType = "text"
+			}
+			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil && isChar {
 				// il y a une virgule, c'est un char(xxx, n) en mode extraction des 'n' premiers caractères
 				// on fait select char(XXX, 2) -> select substring ((XXX)::text, 1, 2)
 				token.SetValue("substring").Append("(")
@@ -405,10 +411,9 @@ from information_schema.columns c) as iicolumns`)
 						continue
 					}
 				}
-				// utilisation de (1)::text à la place de char(1)
+				// utilisation de (1)::type à la place de type(1)
 				token.Cut(token.Next) // suppression token de fonction
-				castToType := "text"
-				if staticStringCharFeature {
+				if staticStringCharFeature && castToType == "text" {
 					currentToken := enclosure.Heads[0]
 					for {
 						if currentToken == enclosure.End {
