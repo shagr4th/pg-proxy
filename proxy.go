@@ -205,9 +205,11 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 		return
 	}
 	config.polyfillLock.Lock()
+	defer config.polyfillLock.Unlock()
 	start := time.Now()
 	checkPolyfill, createPolyfill := config.Polyfill()
 	if createPolyfill == "" {
+		config.Polyfilled = true
 		return
 	}
 	err := config.sendQueryToServer(ctx, checkPolyfill)
@@ -222,7 +224,6 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 		}
 	}
 	config.Polyfilled = true
-	config.polyfillLock.Unlock()
 }
 
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {

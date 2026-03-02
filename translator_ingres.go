@@ -114,7 +114,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			}) {
 				TABLE := token.Search("TABLE", nil, true)
 				UNLOGGED := token.Search("UNLOGGED", nil, true)
-				if TABLE != nil && UNLOGGED == nil {
+				if TABLE != nil && UNLOGGED == nil && TABLE.Prev != nil {
 					TABLE.Prev.Append(" ", "UNLOGGED")
 				}
 			}
@@ -213,7 +213,9 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				} else {
 					tableToken.Cut(on)
 				}
-				on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", fmt.Sprintf("midx_%s", tableToken.Value))
+				if on.Prev != nil {
+					on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", fmt.Sprintf("midx_%s", tableToken.Value))
+				}
 				on.Append(" ", tableToken.Value, "(").Last().Append(")")
 			}
 		}
@@ -397,7 +399,9 @@ from information_schema.columns c) as iicolumns`)
 			beforeComma := enclosure.Heads[1].Prev.Prev
 			if beforeComma != nil {
 				beforeComma.Append(")", "::", "text")
-				enclosure.End.Prev.Append(",", "1")
+				if enclosure.End != nil && enclosure.End.Prev != nil {
+					enclosure.End.Prev.Append(",", "1")
+				}
 			}
 
 		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") ||
@@ -526,12 +530,17 @@ from information_schema.columns c) as iicolumns`)
 			token.Cut(token.Next) // suppression token de fonction
 			// TIMESTAMPADD(HOUR, 1, SYSDATE) => (current_timestamp + CAST(((1)::text||'HOUR') AS INTERVAL))
 			enclosure.Heads[0].Cut(enclosure.Heads[1])
-			addition := enclosure.Heads[1].Cut(enclosure.Heads[2].Prev)
-			enclosure.Heads[2].Prev.Cut(enclosure.Heads[2])
-			enclosure.End.Prev.
-				Append(" ", "+", " ", "CAST", "(", "(", "(").
-				Paste(addition...).
-				Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
+			head2Prev := enclosure.Heads[2].Prev
+			if head2Prev != nil {
+				addition := enclosure.Heads[1].Cut(head2Prev)
+				head2Prev.Cut(enclosure.Heads[2])
+				if enclosure.End != nil && enclosure.End.Prev != nil {
+					enclosure.End.Prev.
+						Append(" ", "+", " ", "CAST", "(", "(", "(").
+						Paste(addition...).
+						Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
+				}
+			}
 		} else if token.Prev != nil && (token.Prev == copyToken || (token.Prev.EqualFold("table") && token.Prev.Prev == copyToken)) {
 			// https://docs.actian.com/openroad/6.2/index.html#page/LangRef/Copy_Statement.htm
 			// https://www.postgresql.org/docs/current/sql-copy.html
