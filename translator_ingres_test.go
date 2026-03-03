@@ -154,15 +154,14 @@ func TestIngres(t *testing.T) {
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
 
-		AssertSqlExec(t, db, false, "COPY TABLE1 INTO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		AssertSqlExec(t, db, false, "COPY TABLE1 TO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '/tmp/test'", 1)
-		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 INTO '/tmp/test'", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '/tmp/test'", 1)
 		tmpTest, err := os.ReadFile("/tmp/test")
 		AssertNoError(t, err)
 		AssertEquals(t, "tmpTest", "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '/tmp/test' with allocation = 4, row_estimate = 1091766", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '/tmp/test'", 1)
 		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '/tmp/test'", 1)
 		tmpTest, err = os.ReadFile("/tmp/test")

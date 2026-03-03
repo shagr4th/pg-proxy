@@ -626,16 +626,18 @@ from information_schema.columns c) as iicolumns`)
 				}
 			}
 			copyWithToken := token.Search("WITH", nil, true)
-			if copyWithToken == nil {
-				t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", format)
-				if delimiter != "" {
-					t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
-				}
-				if globalNull != "" {
-					t = t.Append(",", "NULL", " ", globalNull)
-				}
-				t = t.Append(")")
+			if copyWithToken != nil {
+				_ = copyWithToken.Cut(nil) // TODO: convertir ce qui peut l'être ?
 			}
+
+			t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", format)
+			if delimiter != "" {
+				t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
+			}
+			if globalNull != "" {
+				t = t.Append(",", "NULL", " ", globalNull)
+			}
+			t = t.Append(")")
 		}
 	}
 }
