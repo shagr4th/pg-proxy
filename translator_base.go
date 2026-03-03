@@ -153,7 +153,9 @@ func (q *SqlQuery) reindex() {
 		token.Index = i
 		token.Enclosure = enclosure
 		if addHead && enclosure != nil && token.Type != sqllexer.SPACE {
-			enclosure.Heads = append(enclosure.Heads, token)
+			if enclosure.Keyword != "(" || !token.EqualFold(")") { // cas sans arguments, genre FUNCTION()
+				enclosure.Heads = append(enclosure.Heads, token)
+			}
 			addHead = false
 		}
 		if token.EqualFold("(") || token.EqualFold("CASE") {

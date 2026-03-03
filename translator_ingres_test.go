@@ -155,6 +155,7 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlExec(t, db, false, "COPY TABLE1 INTO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '/tmp/test'", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '/tmp/test'", 1)
 		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '/tmp/test'", 1)
 		tmpTest, err := os.ReadFile("/tmp/test")

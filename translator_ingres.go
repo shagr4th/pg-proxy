@@ -612,10 +612,14 @@ from information_schema.columns c) as iicolumns`)
 				token.Prev.Cut(token)
 			}
 			if copyIntoToken != nil {
-				token.Cut(token.Next)
-				enclosure.Start.Append("SELECT", " ")
-				if enclosure.End != nil && enclosure.End.Prev != nil {
-					enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
+				if len(enclosure.Heads) > 0 {
+					token.Cut(token.Next)
+					enclosure.Start.Append("SELECT", " ")
+					if enclosure.End != nil && enclosure.End.Prev != nil {
+						enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
+					}
+				} else if enclosure.Start != nil && enclosure.End != nil { // on enlève les ()
+					enclosure.Start.Cut(enclosure.End.Next)
 				}
 			}
 			copyWithToken := token.Search("WITH", nil, true)
