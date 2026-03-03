@@ -545,7 +545,7 @@ from information_schema.columns c) as iicolumns`)
 						Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
 				}
 			}
-		} else if token.Prev != nil && (token.Prev == copyToken || (token.Prev.EqualFold("table") && token.Prev.Prev == copyToken)) {
+		} else if token.Prev != nil && token.Prev == copyToken {
 			// https://docs.actian.com/openroad/6.2/index.html#page/LangRef/Copy_Statement.htm
 			// https://www.postgresql.org/docs/current/sql-copy.html
 
