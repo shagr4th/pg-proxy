@@ -225,6 +225,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		if copyIntoToken != nil {
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
 		}
+		tableToken := token.Search("TABLE", nil, true)
+		if tableToken != nil && tableToken.Next != nil {
+			tableToken.Cut(tableToken.Next)
+		}
 	} else if token.EqualFold("EXECUTE") {
 		if token.Next != nil && token.Next.EqualFold("PROCEDURE") {
 			token.Next.Cut(token.Next.Next)
@@ -607,9 +611,6 @@ from information_schema.columns c) as iicolumns`)
 				if columnDummy && endOfHead != nil {
 					enclosure.Heads[i].Cut(endOfHead.Next)
 				}
-			}
-			if token.Prev != nil && token.Prev.EqualFold("table") {
-				token.Prev.Cut(token)
 			}
 			format := "csv"
 			if len(enclosure.Heads) == 0 { // Unformatted Copying sous Ingres
