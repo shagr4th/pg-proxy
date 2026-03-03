@@ -611,20 +611,22 @@ from information_schema.columns c) as iicolumns`)
 			if token.Prev != nil && token.Prev.EqualFold("table") {
 				token.Prev.Cut(token)
 			}
-			if copyIntoToken != nil {
-				if len(enclosure.Heads) > 0 {
-					token.Cut(token.Next)
-					enclosure.Start.Append("SELECT", " ")
-					if enclosure.End != nil && enclosure.End.Prev != nil {
-						enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
-					}
-				} else if enclosure.Start != nil && enclosure.End != nil { // on enlève les ()
+			format := "csv"
+			if len(enclosure.Heads) == 0 { // Unformatted Copying sous Ingres
+				format = "binary"
+				if enclosure.Start != nil && enclosure.End != nil { // on enlève les ()
 					enclosure.Start.Cut(enclosure.End.Next)
+				}
+			} else if copyIntoToken != nil {
+				token.Cut(token.Next)
+				enclosure.Start.Append("SELECT", " ")
+				if enclosure.End != nil && enclosure.End.Prev != nil {
+					enclosure.End.Prev.Append(" ", "FROM", " ", token.Value)
 				}
 			}
 			copyWithToken := token.Search("WITH", nil, true)
 			if copyWithToken == nil {
-				t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", "csv")
+				t := token.Last().Append(" ", "WITH", "(", "FORMAT", " ", format)
 				if delimiter != "" {
 					t = t.Append(",", "DELIMITER", " ", fmt.Sprintf("E%s", delimiter))
 				}
