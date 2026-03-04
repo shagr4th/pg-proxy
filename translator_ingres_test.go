@@ -285,9 +285,9 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select char('456', 2)", []string{"45"})
 		AssertSqlQuery(t, db, "select char(456) + vchar('A') + varchar(789)", []string{"456A789"})
 		AssertSqlQuery(t, db, "select char(456, 2)", []string{"45"})
-		AssertSqlQuery(t, db, "select right(cast('123456' as char(10)), 2)", []string{"  "})
-		AssertSqlQuery(t, db, "select left(cast('123456' as char(10)), 8)", []string{"123456  "})
-		AssertSqlQuery(t, db, "with dl as (select char('  ', 8) as secteur) select secteur from dl where secteur = ''", []string{"        "})
+		AssertSqlQuery(t, db, "select right(char('123456', 10), 2)", []string{"  "})
+		AssertSqlQuery(t, db, "select left(char('123456', 10), 8)", []string{"123456  "})
+		AssertSqlQuery(t, db, "select (char('  ',8) = '        ') and (char('  ',8) = '')", []string{"true"})
 
 		now = time.Now()
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select TIMESTAMPADD(HOUR, 1, SYSDATE)", 1)
