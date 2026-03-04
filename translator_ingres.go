@@ -9,8 +9,6 @@ import (
 	"github.com/DataDog/go-sqllexer"
 )
 
-const staticStringCharFeature = false // on active ?
-
 type ingresTranslator struct {
 }
 
@@ -58,7 +56,7 @@ CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = numeric, FUNCTION = public.
 }
 
 func (v *ingresTranslator) RenameColumn(index int, column string) string {
-	if column == "?column?" || column == "substring" || column == "trunc" || column == "date" || column == "to_char" || column == "trim" {
+	if column == "?column?" || column == "substring" || column == "trunc" || column == "bpchar" || column == "date" || column == "to_char" || column == "trim" {
 		column = fmt.Sprintf("col%d", index+1)
 	}
 	return column
@@ -411,18 +409,22 @@ from information_schema.columns c) as iicolumns`)
 		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") ||
 			token.EqualFold("smallint") || token.EqualFold("int") { // Fonctions de cast
 			castToType := strings.ToLower(token.Value)
-			isChar := strings.HasSuffix(castToType, "char")
-			if isChar {
-				castToType = "text"
+			switch castToType {
+			case "char":
+				castToType = "bpchar"
+			case "vchar":
+				castToType = "varchar"
 			}
+			isChar := strings.HasSuffix(castToType, "char")
 			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil && isChar {
-				// il y a une virgule, c'est un char(xxx, n) en mode extraction des 'n' premiers caractères
-				// on fait select char(XXX, 2) -> select substring ((XXX)::text, 1, 2)
-				token.SetValue("substring").Append("(")
-				beforeComma := enclosure.Heads[1].Prev.Prev
-				if beforeComma != nil {
-					beforeComma.Append(")", "::", "text", ",", " ", "1")
+				// il y a une virgule, c'est un char(xxx, n) en mode longueur des 'n' premiers caractères
+				// on fait select char(XXX, 2) -> select (XXX)::char(2)
+				secondArg := enclosure.Heads[1].Prev.Cut(enclosure.End)
+				if len(secondArg) > 0 {
+					secondArg = secondArg[1:]
 				}
+				token.SetValue(" ")
+				enclosure.End.Append("::", castToType, "(").Paste(secondArg...).Append(")")
 
 			} else if len(enclosure.Heads) == 1 {
 				afterEnclosure := enclosure.End.Next
@@ -440,26 +442,7 @@ from information_schema.columns c) as iicolumns`)
 				}
 				// utilisation de (1)::type à la place de type(1)
 				token.Cut(token.Next) // suppression token de fonction
-				if staticStringCharFeature && castToType == "text" {
-					currentToken := enclosure.Heads[0]
-					for {
-						if currentToken == enclosure.End {
-							break
-						}
-						if castToType != "text" || currentToken.Type != sqllexer.STRING {
-							// n'importe quel autre token qu'un STRING dans l'argument passé à char() annule le cast
-							castToType = "text"
-							break
-						} else {
-							//castToType = fmt.Sprintf("char(%d)", len(currentToken.Value)-2) // on enlève les quotes pour calculer la taille fixe
-							castToType = ""
-						}
-						currentToken = currentToken.Next
-					}
-				}
-				if castToType != "" {
-					enclosure.End.Append("::", castToType)
-				}
+				enclosure.End.Append("::", castToType)
 			}
 
 		} else if token.EqualFold("date_part") && len(enclosure.Heads) == 2 {

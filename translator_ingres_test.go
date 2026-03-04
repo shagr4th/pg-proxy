@@ -240,7 +240,7 @@ func TestIngres(t *testing.T) {
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
 		res, err := proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
-		AssertEquals(t, testQuery, "create temporary table session_tmp_param on commit preserve rows as select substring((par.param2)::text, 1,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql())
+		AssertEquals(t, testQuery, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql())
 
 		AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
@@ -287,6 +287,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select char(456, 2)", []string{"45"})
 		AssertSqlQuery(t, db, "select right(cast('123456' as char(10)), 2)", []string{"  "})
 		AssertSqlQuery(t, db, "select left(cast('123456' as char(10)), 8)", []string{"123456  "})
+		AssertSqlQuery(t, db, "with dl as (select char('  ', 8) as secteur) select secteur from dl where secteur = ''", []string{"        "})
 
 		now = time.Now()
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select TIMESTAMPADD(HOUR, 1, SYSDATE)", 1)
@@ -310,7 +311,7 @@ func TestIngres(t *testing.T) {
 		query := "\\set foo '987'\nSELECT char(:foo, 2);"
 		result, err := testPSQL(query)
 		AssertNoError(t, err)
-		AssertEquals(t, query, "col1\n------\n98\n(1 row)", result)
+		AssertEquals(t, query, "col1\n\n98\n(1 row)", result)
 	}
 }
 
@@ -336,6 +337,9 @@ func testPSQL(query string) (string, error) {
 	content := strings.Split(strings.TrimSpace(string(output)), "\n")
 	for i := range content {
 		content[i] = strings.TrimSpace(content[i])
+		if strings.HasPrefix(content[i], "-") {
+			content[i] = ""
+		}
 	}
 	return strings.Join(content, "\n"), nil
 }
