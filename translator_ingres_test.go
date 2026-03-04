@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/exec"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -304,6 +305,39 @@ func TestIngres(t *testing.T) {
 
 	}
 
+	// sudo apt-get update && sudo apt-get install postgresql-client
+	if _, err = os.Stat("/usr/bin/psql"); err == nil {
+		query := "\\set foo '987'\nSELECT char(:foo, 2);"
+		result, err := testPSQL(query)
+		AssertNoError(t, err)
+		AssertEquals(t, query, "col1\n------\n98\n(1 row)", result)
+	}
+}
+
+func testPSQL(query string) (string, error) {
+	err := os.WriteFile("/tmp/psql.sql", []byte(query), 0666)
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("psql",
+		"-h", "localhost",
+		"-U", TestUsername,
+		"-p", fmt.Sprint(TestProxyPort), // fmt.Sprint(TestDatabasePort),
+		"-d", fmt.Sprintf("%s@localhost:%d", TestDatabaseName, TestDatabasePort), // TestDatabaseName,
+		"-f", "/tmp/psql.sql",
+	)
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+TestPassword)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	content := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for i := range content {
+		content[i] = strings.TrimSpace(content[i])
+	}
+	return strings.Join(content, "\n"), nil
 }
 
 func TestPerf(t *testing.T) {
