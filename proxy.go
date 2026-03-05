@@ -147,7 +147,6 @@ func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, fi
 	}
 
 	var result error
-	// Read and discard all response messages until the next ReadyForQuery ('Z')
 	for {
 		header := make([]byte, 5)
 		if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {

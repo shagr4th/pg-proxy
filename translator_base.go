@@ -430,11 +430,17 @@ func IsMixedCase(str string) bool {
 	return false
 }
 
-type withFatal interface {
+type testInterface interface {
 	Fatal(args ...any)
+	Error(args ...any)
 }
 
-func AssertError(t withFatal, err error, expectedError string) {
+type dbExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	Prepare(query string) (*sql.Stmt, error)
+}
+
+func AssertError(t testInterface, err error, expectedError string) {
 	errorString := ""
 	if err != nil {
 		errorString = err.Error()
@@ -442,19 +448,17 @@ func AssertError(t withFatal, err error, expectedError string) {
 	AssertEquals(t, "error", expectedError, errorString)
 }
 
-func AssertNoError(t withFatal, err error, args ...string) {
-	if err != nil {
-		t.Fatal(err, args)
-	}
+func AssertNoError(t testInterface, err error, args ...string) {
+	AssertEquals(t, "no error", nil, err)
 }
 
-func AssertEquals[K comparable](t withFatal, message string, expected K, got K) {
+func AssertEquals[K comparable](t testInterface, message string, expected K, got K) {
 	if expected != got {
-		t.Fatal(fmt.Errorf("expected %v, got %v", expected, got), message)
+		t.Error(fmt.Errorf("expected %v, got %v", expected, got), message)
 	}
 }
 
-func Exec(db *sql.DB, prepare bool, query string, args ...any) (sql.Result, error) {
+func Exec(db dbExecutor, prepare bool, query string, args ...any) (sql.Result, error) {
 	var res sql.Result
 	var err error
 	var stmt *sql.Stmt
@@ -471,24 +475,7 @@ func Exec(db *sql.DB, prepare bool, query string, args ...any) (sql.Result, erro
 	return res, err
 }
 
-func ExecTx(tx *sql.Tx, prepare bool, query string, args ...any) (sql.Result, error) {
-	var res sql.Result
-	var err error
-	var stmt *sql.Stmt
-	if prepare {
-		stmt, err = tx.Prepare(query)
-		if err != nil {
-			return nil, err
-		}
-		defer stmt.Close()
-		res, err = stmt.Exec(args...)
-	} else {
-		res, err = tx.Exec(query, args...)
-	}
-	return res, err
-}
-
-func Query[K comparable](db *sql.DB, query string, args ...any) ([]*K, error) {
+func Query[K comparable](db dbExecutor, query string, args ...any) ([]*K, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -509,14 +496,14 @@ func Query[K comparable](db *sql.DB, query string, args ...any) ([]*K, error) {
 	return results, err
 }
 
-func AssertSqlRowCount[K comparable](t withFatal, db *sql.DB, query string, expectedRowCount int, args ...any) []*K {
+func AssertSqlRowCount[K comparable](t testInterface, db dbExecutor, query string, expectedRowCount int, args ...any) []*K {
 	results, err := Query[K](db, query, args...)
 	AssertNoError(t, err, query)
 	AssertEquals(t, query, expectedRowCount, len(results))
 	return results
 }
 
-func AssertSqlQuery[K comparable](t withFatal, db *sql.DB, query string, expectedResults []K, args ...any) ([]*K, error) {
+func AssertSqlQuery[K comparable](t testInterface, db dbExecutor, query string, expectedResults []K, args ...any) ([]*K, error) {
 	result := AssertSqlRowCount[K](t, db, query, len(expectedResults), args...)
 	for i := range result {
 		AssertEquals(t, query, expectedResults[i], *result[i])
@@ -524,19 +511,7 @@ func AssertSqlQuery[K comparable](t withFatal, db *sql.DB, query string, expecte
 	return result, nil
 }
 
-func AssertSqlExecTx(t withFatal, tx *sql.Tx, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
-	res, err := ExecTx(tx, prepare, query, args...)
-	AssertNoError(t, err, query)
-	if query != "" {
-		rowsAffected, err := res.RowsAffected()
-		AssertNoError(t, err, query)
-		AssertEquals(t, query, expectedRowsAffected, rowsAffected)
-		return rowsAffected
-	}
-	return 0
-}
-
-func AssertSqlExec(t withFatal, db *sql.DB, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
+func AssertSqlExec(t testInterface, db dbExecutor, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
 	res, err := Exec(db, prepare, query, args...)
 	AssertNoError(t, err, query)
 	if query != "" {

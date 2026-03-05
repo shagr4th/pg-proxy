@@ -319,14 +319,14 @@ func TestIngres(t *testing.T) {
 		if driver == "pgx" { // it seems copy in extended query mode are not supported by lib/pq
 			tx, err := db.Begin()
 			AssertNoError(t, err)
-			AssertSqlExecTx(t, tx, false, "COPY TABLE2 INTO '"+TestCopyFile+"'", size)
+			AssertSqlExec(t, tx, false, "COPY TABLE2 INTO '"+TestCopyFile+"'", size)
 			err = tx.Commit()
 			AssertNoError(t, err)
 
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 			tx, err = db.Begin()
 			AssertNoError(t, err)
-			AssertSqlExecTx(t, tx, true, "COPY TABLE2 FROM '"+TestCopyFile+"'", size)
+			AssertSqlExec(t, tx, true, "COPY TABLE2 FROM '"+TestCopyFile+"'", size)
 			err = tx.Commit()
 			AssertNoError(t, err)
 
@@ -334,7 +334,7 @@ func TestIngres(t *testing.T) {
 			AssertSqlExec(t, db, false, "truncate TABLE1", 0)
 			tx, err = db.Begin()
 			AssertNoError(t, err)
-			_, err = ExecTx(tx, true, "COPY TABLE1 FROM '"+TestCopyFile+"'")
+			_, err = Exec(tx, true, "COPY TABLE1 FROM '"+TestCopyFile+"'")
 			AssertError(t, err, "ERROR: missing data for column \"heuremaj\" (SQLSTATE 22P04)")
 			err = tx.Rollback()
 			AssertNoError(t, err)

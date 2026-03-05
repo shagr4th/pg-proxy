@@ -3,6 +3,7 @@ default: run
 
 test:
 	@go clean -testcache
+# -p 1
 	@go test ./... -v
 
 run:
