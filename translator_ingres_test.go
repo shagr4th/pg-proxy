@@ -29,6 +29,7 @@ const TestDatabaseName = "ingres"
 const TestDatabaseEncoding = "fr_FR.UTF-8"
 const TestUsername = "user"
 const TestPassword = "pass"
+const TestCopyFile = "/tmp/pg-proxy.testcopy"
 
 func TestIngres(t *testing.T) {
 	pgPath := fmt.Sprintf("./pg-%s-%s-%s", TestDatabaseName, TestUsername, TestDatabaseEncoding)
@@ -157,29 +158,29 @@ func TestIngres(t *testing.T) {
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
 
-		defer os.Remove("/tmp/test")
-		AssertSqlExec(t, db, false, "COPY TABLE1 TO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
-		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '/tmp/test'", 1)
-		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '/tmp/test'", 1)
-		tmpTest, err := os.ReadFile("/tmp/test")
+		defer os.Remove(TestCopyFile)
+		AssertSqlExec(t, db, false, "COPY TABLE1 TO '"+TestCopyFile+"'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '"+TestCopyFile+"'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '"+TestCopyFile+"'", 1)
+		tmpTest, err := os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
 		AssertEquals(t, "tmpTest", "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '/tmp/test' with allocation = 4, row_estimate = 1091766", 1)
-		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '/tmp/test'", 1)
-		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '/tmp/test'", 1)
-		tmpTest, err = os.ReadFile("/tmp/test")
+		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '"+TestCopyFile+"' with allocation = 4, row_estimate = 1091766", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '"+TestCopyFile+"'", 1)
+		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '"+TestCopyFile+"'", 1)
+		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
 		AssertEquals(t, "tmpTest", "dummy:100100\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '/tmp/test'", 1)
+		AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '"+TestCopyFile+"'", 1)
 
-		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '/tmp/test'", 2)
-		tmpTest, err = os.ReadFile("/tmp/test")
+		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '"+TestCopyFile+"'", 2)
+		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
 		AssertEquals(t, "tmpTest", "dummy     \nbouh\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '/tmp/test'", 2)
+		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '"+TestCopyFile+"'", 2)
 
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
@@ -318,35 +319,35 @@ func TestIngres(t *testing.T) {
 		if driver == "pgx" { // it seems copy in extended query mode are not supported by lib/pq
 			tx, err := db.Begin()
 			AssertNoError(t, err)
-			AssertSqlExecTx(t, tx, false, "COPY TABLE2 INTO '/tmp/test'", size)
+			AssertSqlExecTx(t, tx, false, "COPY TABLE2 INTO '"+TestCopyFile+"'", size)
 			err = tx.Commit()
 			AssertNoError(t, err)
 
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 			tx, err = db.Begin()
 			AssertNoError(t, err)
-			AssertSqlExecTx(t, tx, true, "COPY TABLE2 FROM '/tmp/test'", size)
+			AssertSqlExecTx(t, tx, true, "COPY TABLE2 FROM '"+TestCopyFile+"'", size)
 			err = tx.Commit()
 			AssertNoError(t, err)
 
-			os.WriteFile("/tmp/test", []byte("wrong data"), 0644)
+			os.WriteFile(TestCopyFile, []byte("wrong data"), 0644)
 			AssertSqlExec(t, db, false, "truncate TABLE1", 0)
 			tx, err = db.Begin()
 			AssertNoError(t, err)
-			_, err = ExecTx(tx, true, "COPY TABLE1 FROM '/tmp/test'", size)
-			AssertError(t, err)
+			_, err = ExecTx(tx, true, "COPY TABLE1 FROM '"+TestCopyFile+"'")
+			AssertError(t, err, "ERROR: missing data for column \"heuremaj\" (SQLSTATE 22P04)")
 			err = tx.Rollback()
 			AssertNoError(t, err)
 		} else {
-			AssertSqlExec(t, db, false, "COPY TABLE2 INTO '/tmp/test'", size)
+			AssertSqlExec(t, db, false, "COPY TABLE2 INTO '"+TestCopyFile+"'", size)
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
-			AssertSqlExec(t, db, false, "COPY TABLE2 FROM '/tmp/test'", size)
+			AssertSqlExec(t, db, false, "COPY TABLE2 FROM '"+TestCopyFile+"'", size)
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 
-			os.WriteFile("/tmp/test", []byte("wrong data"), 0644)
+			os.WriteFile(TestCopyFile, []byte("wrong data"), 0644)
 			AssertSqlExec(t, db, false, "truncate TABLE1", 0)
-			_, err = Exec(db, false, "COPY TABLE1 FROM '/tmp/test'", size)
-			AssertError(t, err)
+			_, err = Exec(db, false, "COPY TABLE1 FROM '"+TestCopyFile+"'")
+			AssertError(t, err, "pq: missing data for column \"heuremaj\" (22P04)")
 		}
 		log.Printf("time for copy of %d: %d ms", size, time.Since(start).Milliseconds())
 

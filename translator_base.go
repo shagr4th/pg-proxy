@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -435,10 +434,12 @@ type withFatal interface {
 	Fatal(args ...any)
 }
 
-func AssertError(t withFatal, err error, args ...string) {
-	if err == nil {
-		t.Fatal(errors.New("should have an error"), args)
+func AssertError(t withFatal, err error, expectedError string) {
+	errorString := ""
+	if err != nil {
+		errorString = err.Error()
 	}
+	AssertEquals(t, "error", expectedError, errorString)
 }
 
 func AssertNoError(t withFatal, err error, args ...string) {
