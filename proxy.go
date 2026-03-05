@@ -103,14 +103,16 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 	}
+	if parsed != nil {
+		ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
+		ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
+	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 		}
 		return msg, nil
 	}
-	ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
-	ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
 	msg.QueryString = parsed.Sql()
 	if config.QueryStore != nil {
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = msg.QueryString
@@ -202,7 +204,6 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 		delete(ctx.ConnInfo.StartupParameters, proxyTranslationKey)
 	}
 	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
-	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
 	delete(ctx.ConnInfo.StartupParameters, proxyCopyToKey)
 }
 
@@ -291,11 +292,11 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 				return msg, err
 			}
 		}
+		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
+			return nil, fmt.Errorf("Copy Done write failed: %w", err)
+		}
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy from %s done\n", config.clientInfo(ctx), copyFrom)
-		}
-		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
-			return nil, fmt.Errorf("Copy Data write failed: %w", err)
 		}
 		msg.BypassReturn = true
 	}
@@ -338,6 +339,7 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
 	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
 	if ok && config.IsCopyLocal() {
+		delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy to %s done\n", config.clientInfo(ctx), copyTo)
 		}
@@ -375,6 +377,7 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			errorCode = err.Value
 		}
 	}
+	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
 	config.cleanupStore(ctx)
 	if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
 		log.Printf("ERROR [%s] %s (error code: %s)\n", config.clientInfo(ctx), errorMessage, errorCode)

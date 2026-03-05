@@ -226,13 +226,13 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		copyIntoToken = token.Search("INTO", nil, true)
 		if copyIntoToken != nil {
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
-			if copyIntoToken.Next != nil && copyIntoToken.Next.Type == sqllexer.STRING {
+			if v.IsCopyLocal() && copyIntoToken.Next != nil && copyIntoToken.Next.Type == sqllexer.STRING {
 				parsed.CopyTo = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
 				copyIntoToken.Next.Set(sqllexer.IDENT, "STDOUT")
 			}
 		} else {
 			FROM := token.Search("FROM", nil, true)
-			if FROM != nil && FROM.Next != nil && FROM.Next.Type == sqllexer.STRING {
+			if v.IsCopyLocal() && FROM != nil && FROM.Next != nil && FROM.Next.Type == sqllexer.STRING {
 				parsed.CopyFrom = FROM.Next.Value[1 : len(FROM.Next.Value)-1]
 				FROM.Next.Set(sqllexer.IDENT, "STDIN")
 			}

@@ -305,6 +305,26 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "DROP SEQUENCE IF EXISTS seq_tarif", 0)
 		AssertSqlExec(t, db, true, "CREATE SEQUENCE seq_tarif INCREMENT BY 1 MINVALUE 1 MAXVALUE 100000 START 1", 0)
 		AssertSqlQuery(t, db, "select seq_tarif.nextval", []int{1})
+
+		/*AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+		start := time.Now()
+		rand.Seed(time.Now().Unix())
+		size := int64(5000)
+		for range size {
+			val := fmt.Sprintf("%d", rand.Int())
+			if len(val) > 10 {
+				val = val[:10]
+			}
+			AssertSqlExec(t, db, false, "INSERT INTO TABLE2 VALUES('"+val+"')", 1)
+		}
+		AssertSqlExec(t, db, false, "COPY TABLE2 INTO '/tmp/test'", size)
+
+		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+		AssertSqlExec(t, db, false, "COPY TABLE2 FROM '/tmp/test'", size)
+		AssertNoError(t, err)
+
+		log.Printf("time for copy of %d: %d ms", size, time.Since(start).Milliseconds())*/
+
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE2", 0)
 

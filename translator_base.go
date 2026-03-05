@@ -463,6 +463,23 @@ func Exec(db *sql.DB, prepare bool, query string, args ...any) (sql.Result, erro
 	return res, err
 }
 
+func ExecTx(tx *sql.Tx, prepare bool, query string, args ...any) (sql.Result, error) {
+	var res sql.Result
+	var err error
+	var stmt *sql.Stmt
+	if prepare {
+		stmt, err = tx.Prepare(query)
+		if err != nil {
+			return nil, err
+		}
+		defer stmt.Close()
+		res, err = stmt.Exec(args...)
+	} else {
+		res, err = tx.Exec(query, args...)
+	}
+	return res, err
+}
+
 func Query[K comparable](db *sql.DB, query string, args ...any) ([]*K, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
@@ -497,6 +514,18 @@ func AssertSqlQuery[K comparable](t withFatal, db *sql.DB, query string, expecte
 		AssertEquals(t, query, expectedResults[i], *result[i])
 	}
 	return result, nil
+}
+
+func AssertSqlExecTx(t withFatal, tx *sql.Tx, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
+	res, err := ExecTx(tx, prepare, query, args...)
+	AssertNoError(t, err, query)
+	if query != "" {
+		rowsAffected, err := res.RowsAffected()
+		AssertNoError(t, err, query)
+		AssertEquals(t, query, expectedRowsAffected, rowsAffected)
+		return rowsAffected
+	}
+	return 0
 }
 
 func AssertSqlExec(t withFatal, db *sql.DB, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
