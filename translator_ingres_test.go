@@ -83,7 +83,7 @@ func TestIngres(t *testing.T) {
 			defer f.Close()
 			err = pprof.StartCPUProfile(f)
 			if err != nil {
-				t.Fatal(err)
+				t.Error(err)
 			}
 		}
 		for range numThreads {
@@ -119,7 +119,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT 'a' + :1", []string{"ab"}, "b")
 		_, err = Query[string](db, "SELECT 'a' + :name", sql.Named("name", "b"))
 		if err == nil || !strings.Contains(err.Error(), `pg-proxy error: named parameter 'name' not supported in postgres: strconv.Atoi: parsing "name": invalid syntax`) {
-			t.Fatal("Unexpected nil or wrong error: " + err.Error())
+			t.Error("Unexpected nil or wrong error for SELECT 'a' + :name", err)
 		}
 		AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
 		AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
@@ -128,7 +128,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
 		AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
-		AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10))", 0)
+		AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10)) with nojournaling", 0)
 		AssertSqlExec(t, db, false, "create temporary table TABLE3 (COLUMN2 CHAR(10));SET pg.testvar = 1; create temporary table TABLE4 (COLUMN2 VARCHAR(10));", 0)
 
 		AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
@@ -164,21 +164,21 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err := os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, "tmpTest", "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest))
+		AssertEquals(t, TestCopyFile, "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '"+TestCopyFile+"' with allocation = 4, row_estimate = 1091766", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '"+TestCopyFile+"'", 1)
 		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, "tmpTest", "dummy:100100\n", string(tmpTest))
+		AssertEquals(t, TestCopyFile, "dummy:100100\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '"+TestCopyFile+"'", 1)
 
 		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '"+TestCopyFile+"'", 2)
 		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, "tmpTest", "dummy     \nbouh\n", string(tmpTest))
+		AssertEquals(t, TestCopyFile, "dummy     \nbouh\n", string(tmpTest))
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '"+TestCopyFile+"'", 2)
 
