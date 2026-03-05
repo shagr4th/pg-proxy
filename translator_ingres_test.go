@@ -179,6 +179,9 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '/tmp/test'", 2)
 
+		p, _ := proxyConfig.Translate("copy sh_general.tb_user_utilisateur into '/schenkerfrance/brochara/user.out'", true, false)
+		AssertEquals(t, "", "copy sh_general.tb_user_utilisateur to STDOUT", p.Sql())
+
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
 		AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})

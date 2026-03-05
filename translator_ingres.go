@@ -226,6 +226,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		copyIntoToken = token.Search("INTO", nil, true)
 		if copyIntoToken != nil {
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
+			if copyIntoToken.Next != nil && copyIntoToken.Next.Type == sqllexer.STRING {
+				parsed.CopyTo = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
+				copyIntoToken.Next.Set(sqllexer.IDENT, "STDOUT")
+			}
 		}
 		tableToken := token.Search("TABLE", nil, true)
 		if tableToken != nil && tableToken.Next != nil {
@@ -630,10 +634,6 @@ from information_schema.columns c) as iicolumns`)
 			if FROM != nil && copyIntoToken == nil && FROM.Next != nil && FROM.Next.Type == sqllexer.STRING {
 				parsed.CopyFrom = FROM.Next.Value[1 : len(FROM.Next.Value)-1]
 				FROM.Next.Set(sqllexer.IDENT, "STDIN")
-			}
-			if copyIntoToken != nil && copyIntoToken.Next != nil && copyIntoToken.Next.Type == sqllexer.STRING {
-				parsed.CopyTo = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
-				copyIntoToken.Next.Set(sqllexer.IDENT, "STDOUT")
 			}
 		}
 	}
