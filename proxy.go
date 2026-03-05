@@ -134,7 +134,7 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 	return msg, nil
 }
 
-func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, reader io.Reader, expectedType byte) ([]byte, error) {
+func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, finalExpectedType byte) ([]byte, error) {
 	if _, err := io.Copy(ctx.ServerConn, reader); err != nil {
 		return nil, fmt.Errorf("Polyfill write failed: %w", err)
 	}
@@ -144,7 +144,7 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, reader io.Reader, e
 	for {
 		header := make([]byte, 5)
 		if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
-			return nil, fmt.Errorf("Polyfill read failed: %w", err)
+			return nil, fmt.Errorf("data read failed: %w", err)
 		}
 
 		msgType := header[0]
@@ -154,12 +154,12 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, reader io.Reader, e
 		if bodyLen > 0 {
 			body = make([]byte, bodyLen)
 			if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
-				return nil, fmt.Errorf("Polyfill read failed: %w", err)
+				return nil, fmt.Errorf("data read failed: %w", err)
 			}
 		}
 
 		if msgType == 'E' {
-			result = errors.New("Polyfill error")
+			result = errors.New("data error")
 			errResp := message.ReadErrorResponse(body)
 			for _, f := range errResp.Fields {
 				if f.Type == 'M' {
@@ -169,7 +169,7 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, reader io.Reader, e
 			}
 		}
 
-		if msgType == expectedType {
+		if msgType == finalExpectedType {
 			return body, result
 		}
 	}
@@ -218,9 +218,9 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 		config.Polyfilled = true
 		return
 	}
-	_, err := config.sendQueryToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
+	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
 	if err != nil { // seems polyfill is not installed
-		_, err = config.sendQueryToServer(ctx, (&message.Query{QueryString: createPolyfill}).Reader(), 'Z')
+		_, err = config.sendDataToServer(ctx, (&message.Query{QueryString: createPolyfill}).Reader(), 'Z')
 		if config.Verbose&1 == 1 {
 			if err == nil {
 				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", config.clientInfo(ctx), time.Since(start).Microseconds())
