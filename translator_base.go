@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -432,6 +433,12 @@ func IsMixedCase(str string) bool {
 
 type withFatal interface {
 	Fatal(args ...any)
+}
+
+func AssertError(t withFatal, err error, args ...string) {
+	if err == nil {
+		t.Fatal(errors.New("should have an error"), args)
+	}
 }
 
 func AssertNoError(t withFatal, err error, args ...string) {

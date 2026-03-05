@@ -93,6 +93,8 @@ func (config *ProxyConfig) clientInfo(ctx *proxy.Ctx) string {
 		ctx.ConnInfo.ClientAddress))
 }
 
+const simpleQueryParse = "simpleQueryParse"
+
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	start := time.Now()
 	if config.QueryStore != nil {
@@ -100,15 +102,13 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
 	}
 	ctx.ConnInfo.StartupParameters[proxyOriginalKey] = msg.QueryString
+	ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] = fmt.Sprintf("%t", msg.PreparedStatementName != simpleQueryParse)
 	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 	}
 	if parsed != nil {
 		ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
-		if msg.PreparedStatementName != "dummyQuery" {
-			ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] = parsed.CopyFrom
-		}
 		ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
 	}
 	if parsed == nil || !parsed.Transformed {
@@ -132,7 +132,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 
 func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
 	parseMsg, _ := config.handleParse(ctx, &message.Parse{
-		PreparedStatementName: "dummyQuery",
+		PreparedStatementName: simpleQueryParse,
 		QueryString:           msg.QueryString,
 	})
 	if parseMsg != nil {
@@ -269,7 +269,6 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 
 func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
 	copyFrom, ok := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
-	copyExtendedFrom, okExtended := ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey]
 	if ok && config.IsCopyLocal() {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy from %s\n", config.clientInfo(ctx), copyFrom)
@@ -288,7 +287,7 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
-					return nil, fmt.Errorf("Copy Data write failed: %w", err)
+					return nil, fmt.Errorf("Copy Data send failed: %w", err)
 				}
 			}
 			if err == io.EOF {
@@ -299,11 +298,11 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 			}
 		}
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
-			return nil, fmt.Errorf("Copy Done write failed: %w", err)
+			return nil, fmt.Errorf("Copy Done send failed: %w", err)
 		}
-		if okExtended && copyExtendedFrom == copyFrom {
+		if ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
 			if _, err := io.Copy(ctx.ServerConn, message.ReadSync([]byte{}).Reader()); err != nil {
-				return nil, fmt.Errorf("Copy Done write failed: %w", err)
+				return nil, fmt.Errorf("Sync send failed: %w", err)
 			}
 		}
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
@@ -350,8 +349,6 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
 	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
 	if ok && config.IsCopyLocal() {
-		delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
-		delete(ctx.ConnInfo.StartupParameters, proxyCopyFromExtendedKey)
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy to %s done\n", config.clientInfo(ctx), copyTo)
 		}
@@ -389,8 +386,6 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			errorCode = err.Value
 		}
 	}
-	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
-	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromExtendedKey)
 	config.cleanupStore(ctx)
 	if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
 		log.Printf("ERROR [%s] %s (error code: %s)\n", config.clientInfo(ctx), errorMessage, errorCode)

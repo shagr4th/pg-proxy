@@ -328,10 +328,25 @@ func TestIngres(t *testing.T) {
 			AssertSqlExecTx(t, tx, true, "COPY TABLE2 FROM '/tmp/test'", size)
 			err = tx.Commit()
 			AssertNoError(t, err)
+
+			os.WriteFile("/tmp/test", []byte("wrong data"), 0644)
+			AssertSqlExec(t, db, false, "truncate TABLE1", 0)
+			tx, err = db.Begin()
+			AssertNoError(t, err)
+			_, err = ExecTx(tx, true, "COPY TABLE1 FROM '/tmp/test'", size)
+			AssertError(t, err)
+			err = tx.Rollback()
+			AssertNoError(t, err)
 		} else {
 			AssertSqlExec(t, db, false, "COPY TABLE2 INTO '/tmp/test'", size)
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 			AssertSqlExec(t, db, false, "COPY TABLE2 FROM '/tmp/test'", size)
+			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+
+			os.WriteFile("/tmp/test", []byte("wrong data"), 0644)
+			AssertSqlExec(t, db, false, "truncate TABLE1", 0)
+			_, err = Exec(db, false, "COPY TABLE1 FROM '/tmp/test'", size)
+			AssertError(t, err)
 		}
 		log.Printf("time for copy of %d: %d ms", size, time.Since(start).Milliseconds())
 
