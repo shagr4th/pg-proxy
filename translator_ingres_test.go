@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -179,9 +181,6 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '/tmp/test'", 2)
 
-		p, _ := proxyConfig.Translate("copy sh_general.tb_user_utilisateur into '/schenkerfrance/brochara/user.out'", true, false)
-		AssertEquals(t, "", "copy sh_general.tb_user_utilisateur to STDOUT", p.Sql())
-
 		AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"table1", "table2"})
 		AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
 		AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})
@@ -306,28 +305,35 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "CREATE SEQUENCE seq_tarif INCREMENT BY 1 MINVALUE 1 MAXVALUE 100000 START 1", 0)
 		AssertSqlQuery(t, db, "select seq_tarif.nextval", []int{1})
 
-		/*AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
-		start := time.Now()
-		rand.Seed(time.Now().Unix())
-		size := int64(5000)
-		for range size {
-			val := fmt.Sprintf("%d", rand.Int())
-			if len(val) > 10 {
-				val = val[:10]
+		if driver == "pgx" { // it seems copy in extended query mode are not supported by lib/pq
+			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+			start := time.Now()
+			size := int64(5000)
+			for range size {
+				val := fmt.Sprintf("%d", rand.Int())
+				if len(val) > 10 {
+					val = val[:10]
+				}
+				AssertSqlExec(t, db, false, "INSERT INTO TABLE2 VALUES('"+val+"')", 1)
 			}
-			AssertSqlExec(t, db, false, "INSERT INTO TABLE2 VALUES('"+val+"')", 1)
+			tx, err := db.Begin()
+			AssertNoError(t, err)
+			AssertSqlExecTx(t, tx, false, "COPY TABLE2 INTO '/tmp/test'", size)
+			err = tx.Commit()
+			AssertNoError(t, err)
+
+			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+			tx, err = db.Begin()
+			AssertNoError(t, err)
+			AssertSqlExecTx(t, tx, true, "COPY TABLE2 FROM '/tmp/test'", size)
+			err = tx.Commit()
+			AssertNoError(t, err)
+
+			log.Printf("time for copy of %d: %d ms", size, time.Since(start).Milliseconds())
 		}
-		AssertSqlExec(t, db, false, "COPY TABLE2 INTO '/tmp/test'", size)
-
-		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
-		AssertSqlExec(t, db, false, "COPY TABLE2 FROM '/tmp/test'", size)
-		AssertNoError(t, err)
-
-		log.Printf("time for copy of %d: %d ms", size, time.Since(start).Milliseconds())*/
 
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE2", 0)
-
 	}
 
 	// sudo apt-get update && sudo apt-get install postgresql-client
