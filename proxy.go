@@ -264,15 +264,21 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
 	copyFrom, ok := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
 	if ok && config.IsCopyLocal() {
+		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Will copy from %s\n", config.clientInfo(ctx), copyFrom)
+		}
 		f, err := os.Open(copyFrom)
 		if err != nil {
 			return msg, err
 		}
 		defer f.Close()
-		buf := make([]byte, 8192)
+		buf := make([]byte, 65536)
 		for {
 			n, err := f.Read(buf)
 			if n > 0 {
+				if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
+					log.Printf("INFO  [%s] Read %d bytes from %s\n", config.clientInfo(ctx), n, copyFrom)
+				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
 					return nil, fmt.Errorf("Copy Data write failed: %w", err)
@@ -285,6 +291,9 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 				return msg, err
 			}
 		}
+		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Copy from %s done\n", config.clientInfo(ctx), copyFrom)
+		}
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
 			return nil, fmt.Errorf("Copy Data write failed: %w", err)
 		}
@@ -296,6 +305,9 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
 	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
 	if ok && config.IsCopyLocal() {
+		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Will copy to %s\n", config.clientInfo(ctx), copyTo)
+		}
 		f, err := os.Create(copyTo)
 		if err != nil {
 			return msg, err
@@ -324,8 +336,11 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 }
 
 func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
-	_, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
 	if ok && config.IsCopyLocal() {
+		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Copy to %s done\n", config.clientInfo(ctx), copyTo)
+		}
 		msg.BypassReturn = true
 	}
 	return msg, nil
