@@ -9,43 +9,43 @@ func TestEnclosingFunction(t *testing.T) {
 		parsed, err := ParseSql(query, "none")
 		AssertNoError(t, err, query)
 		NUM := parsed.First().Search("112.1", nil, false)
-		AssertEquals(t, "IS NUM", true, NUM != nil)
+		AssertEquals(t, true, NUM != nil, "IS NUM")
 
 		TRUNC, pos := NUM.EnclosingFunction()
-		AssertEquals(t, "IS TRUNC", true, TRUNC != nil)
-		AssertEquals(t, "IS TRUNC", "TRUNC", TRUNC.Value)
-		AssertEquals(t, "IS TRUNC", 0, pos)
+		AssertEquals(t, true, TRUNC != nil, "IS TRUNC")
+		AssertEquals(t, "TRUNC", TRUNC.Value, "IS TRUNC")
+		AssertEquals(t, 0, pos, "IS TRUNC")
 	}
 
 	for _, query := range []string{"SELECT TRUNC(112.123, (2))", "SELECT TRUNC(112.123, 1+(2))"} {
 		parsed, err := ParseSql(query, "none")
 		AssertNoError(t, err, query)
 		NUM := parsed.First().Search("2", nil, false)
-		AssertEquals(t, "IS NUM", true, NUM != nil)
+		AssertEquals(t, true, NUM != nil, "IS NUM")
 
 		TRUNC, pos := NUM.EnclosingFunction()
-		AssertEquals(t, "IS TRUNC", true, TRUNC != nil)
-		AssertEquals(t, "IS TRUNC", "TRUNC", TRUNC.Value)
-		AssertEquals(t, "IS TRUNC", 1, pos)
+		AssertEquals(t, true, TRUNC != nil, "IS TRUNC")
+		AssertEquals(t, "TRUNC", TRUNC.Value, "IS TRUNC")
+		AssertEquals(t, 1, pos, "IS TRUNC")
 	}
 }
 
 func TestSeparators(t *testing.T) {
 	parsed, err := ParseSql("SELECT 1; SELECT 1 + 2;;", "none")
-	AssertEquals(t, "Separators count", 3, len(parsed.separators))
+	AssertEquals(t, 3, len(parsed.separators), "Separators count")
 	AssertNoError(t, err)
 	found := parsed.First().Search("1", nil, true)
-	AssertEquals(t, "First query search", "1", found.Value)
+	AssertEquals(t, "1", found.Value, "First query search")
 	separator := found.Next
-	AssertEquals(t, "Check Separator", true, separator.IsSeparator())
-	AssertEquals(t, "Last is the same", found, separator.Last())
+	AssertEquals(t, true, separator.IsSeparator(), "Check Separator")
+	AssertEquals(t, found, separator.Last(), "Last is the same")
 	found = separator.Next.Search("2", nil, true)
-	AssertEquals(t, "Second query search", "2", found.Value)
+	AssertEquals(t, "2", found.Value, "Second query search")
 }
 
 func TestMixedCase(t *testing.T) {
-	AssertEquals(t, "AB", IsMixedCase("AB"), false)
-	AssertEquals(t, "aB", IsMixedCase("aB"), true)
-	AssertEquals(t, "ab", IsMixedCase("ab"), false)
-	AssertEquals(t, "A.B", IsMixedCase("A.B"), false)
+	AssertEquals(t, IsMixedCase("AB"), false, "AB")
+	AssertEquals(t, IsMixedCase("aB"), true, "aB")
+	AssertEquals(t, IsMixedCase("ab"), false, "ab")
+	AssertEquals(t, IsMixedCase("A.B"), false, "A.B")
 }

@@ -482,30 +482,30 @@ func AssertError(t HasErrorf, err error, expectedError string, args ...string) {
 	if err != nil {
 		errorString = err.Error()
 	}
-	AssertEquals(t, strings.Join(args, ","), expectedError, errorString)
+	AssertEquals(t, expectedError, errorString, args...)
 }
 
 func AssertNoError(t HasErrorf, err error, args ...string) {
-	AssertEquals(t, strings.Join(args, ","), nil, err)
+	AssertEquals(t, nil, err, args...)
 }
 
-func AssertEquals[K comparable](t HasErrorf, message string, expected K, got K) {
+func AssertEquals[K comparable](t HasErrorf, expected K, got K, args ...string) {
 	if expected != got {
-		t.Errorf("%s : expected %v, got %v", message, expected, got)
+		t.Errorf("expected %v, got %v (from %s)", expected, got, strings.Join(args, ","))
 	}
 }
 
 func AssertSqlRowCount[K comparable](t HasErrorf, db dbExecutor, query string, expectedRowCount int, args ...any) []*K {
 	results, err := Query[K](db, query, args...)
 	AssertNoError(t, err, query)
-	AssertEquals(t, query, expectedRowCount, len(results))
+	AssertEquals(t, expectedRowCount, len(results), query)
 	return results
 }
 
 func AssertSqlQuery[K comparable](t HasErrorf, db dbExecutor, query string, expectedResults []K, args ...any) ([]*K, error) {
 	result := AssertSqlRowCount[K](t, db, query, len(expectedResults), args...)
 	for i := range result {
-		AssertEquals(t, query, expectedResults[i], *result[i])
+		AssertEquals(t, expectedResults[i], *result[i], query)
 	}
 	return result, nil
 }
@@ -516,7 +516,7 @@ func AssertSqlExec(t HasErrorf, db dbExecutor, prepare bool, query string, expec
 	if query != "" {
 		rowsAffected, err := res.RowsAffected()
 		AssertNoError(t, err, query)
-		AssertEquals(t, query, expectedRowsAffected, rowsAffected)
+		AssertEquals(t, expectedRowsAffected, rowsAffected, query)
 		return rowsAffected
 	}
 	return 0

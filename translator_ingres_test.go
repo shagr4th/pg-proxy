@@ -150,10 +150,10 @@ func TestIngres(t *testing.T) {
 		defer rows.Close()
 		columns, err := rows.Columns()
 		AssertNoError(t, err)
-		AssertEquals(t, testQuery, "column1", columns[0])
-		AssertEquals(t, testQuery, "col2", columns[1])
-		AssertEquals(t, testQuery, "overr1", columns[2])
-		AssertEquals(t, testQuery, "col4", columns[3])
+		AssertEquals(t, "column1", columns[0], testQuery)
+		AssertEquals(t, "col2", columns[1], testQuery)
+		AssertEquals(t, "overr1", columns[2], testQuery)
+		AssertEquals(t, "col4", columns[3], testQuery)
 
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
@@ -164,21 +164,21 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err := os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, TestCopyFile, "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest))
+		AssertEquals(t, "5047434f50590aff0d0a00000000000000000000020000000564756d6d7900000006313030313030ffff", hex.EncodeToString(tmpTest), TestCopyFile)
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () FROM '"+TestCopyFile+"' with allocation = 4, row_estimate = 1091766", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = char(0)'%') INTO '"+TestCopyFile+"'", 1)
 		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(05) colon with null('bouh'), heuremaj = CHAR(6)) INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, TestCopyFile, "dummy:100100\n", string(tmpTest))
+		AssertEquals(t, "dummy:100100\n", string(tmpTest), TestCopyFile)
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '"+TestCopyFile+"'", 1)
 
 		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '"+TestCopyFile+"'", 2)
 		tmpTest, err = os.ReadFile(TestCopyFile)
 		AssertNoError(t, err)
-		AssertEquals(t, TestCopyFile, "dummy     \nbouh\n", string(tmpTest))
+		AssertEquals(t, "dummy     \nbouh\n", string(tmpTest), TestCopyFile)
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '"+TestCopyFile+"'", 2)
 
@@ -196,7 +196,7 @@ func TestIngres(t *testing.T) {
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
 		parsed, err := proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
-		AssertEquals(t, testQuery, false, parsed.Transformed)
+		AssertEquals(t, false, parsed.Transformed, testQuery)
 
 		AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM TABLE2 SET COLUMN1 = charextract(TABLE2.COLUMN2, 2)", 1)
 		AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM TABLE2 SET COLUMN1 = '1' WHERE COLUMN1 = 'u'", 1)
@@ -208,43 +208,43 @@ func TestIngres(t *testing.T) {
 		testQuery = "EXECUTE PROCEDURE TOTO (ARG = 't')"
 		parsed, err = proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
-		AssertEquals(t, testQuery, "CALL TOTO (ARG => 't')", parsed.Sql())
+		AssertEquals(t, "CALL TOTO (ARG => 't')", parsed.Sql(), testQuery)
 
 		now := time.Now()
 
 		testQuery = "select date('today')" // pareil que current_date
 		timeResults := AssertSqlRowCount[time.Time](t, db, testQuery, 1)
 		timeResults2 := AssertSqlRowCount[time.Time](t, db, "select current_date", 1)
-		AssertEquals(t, testQuery, (*timeResults2[0]).Unix(), (*timeResults[0]).Unix())
+		AssertEquals(t, (*timeResults2[0]).Unix(), (*timeResults[0]).Unix(), testQuery)
 		AssertSqlQuery(t, db, "select char(date('today'))", []string{now.Format("2006-01-02")})
 		AssertSqlQuery(t, db, "select date_part('minutes','now')", []string{now.Format("4")})
 		AssertSqlQuery(t, db, "select date_part('minutes','today')", []string{"0"})
 
 		testQuery = "select date('2012-12-01 16:55:15')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, testQuery, 16, timeResults[0].Hour())
-		AssertEquals(t, testQuery, 55, timeResults[0].Minute())
+		AssertEquals(t, 16, timeResults[0].Hour(), testQuery)
+		AssertEquals(t, 55, timeResults[0].Minute(), testQuery)
 		testQuery = "select date_part('minutes', DATE('23-Oct-1998 12:33'))"
 		intResults := AssertSqlRowCount[int](t, db, testQuery, 1)
-		AssertEquals(t, testQuery, 33, *intResults[0])
+		AssertEquals(t, 33, *intResults[0], testQuery)
 
 		testQuery = "select date('today') - 1"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, testQuery, now.AddDate(0, 0, -1).Month(), timeResults[0].Month())
-		AssertEquals(t, testQuery, now.AddDate(0, 0, -1).Day(), timeResults[0].Day())
+		AssertEquals(t, now.AddDate(0, 0, -1).Month(), timeResults[0].Month(), testQuery)
+		AssertEquals(t, now.AddDate(0, 0, -1).Day(), timeResults[0].Day(), testQuery)
 		testQuery = "SELECT TO_DATE('2012-12-01', 'YYYY-MM-DD')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, testQuery, time.December, timeResults[0].Month())
-		AssertEquals(t, testQuery, 1, timeResults[0].Day())
+		AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
 		testQuery = "SELECT TO_DATE('2012-Dec', 'YYYY-MON')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, testQuery, time.December, timeResults[0].Month())
-		AssertEquals(t, testQuery, 1, timeResults[0].Day())
+		AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
 		res, err := proxyConfig.Translate(testQuery, true, false)
 		AssertNoError(t, err)
-		AssertEquals(t, testQuery, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql())
+		AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
 		AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
 		AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
@@ -279,10 +279,10 @@ func TestIngres(t *testing.T) {
 		AssertNoError(t, err)
 
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select Ifnull(null, date('05/25/2022'))", 1)
-		AssertEquals(t, testQuery, tm.Unix(), (*timeResults[0]).Unix())
+		AssertEquals(t, tm.Unix(), (*timeResults[0]).Unix(), testQuery)
 		now = time.Now()
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select sysdate", 1)
-		AssertEquals(t, testQuery, now.Unix(), (*timeResults[0]).Unix())
+		AssertEquals(t, now.Unix(), (*timeResults[0]).Unix(), testQuery)
 		AssertSqlQuery(t, db, "SELECT date_part('year', SYSDATE) + date_part('month', SYSDATE) + date_part('day', SYSDATE)", []int{now.Year() + int(now.Month()) + now.Day()})
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('SESSION_ID')", 1)
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('DUMMY')", 1)
@@ -295,7 +295,7 @@ func TestIngres(t *testing.T) {
 
 		now = time.Now()
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select TIMESTAMPADD(HOUR, 1, SYSDATE)", 1)
-		AssertEquals(t, testQuery, now.Add(time.Hour).Unix(), (*timeResults[0]).Unix())
+		AssertEquals(t, now.Add(time.Hour).Unix(), (*timeResults[0]).Unix(), testQuery)
 
 		currentHour, err := strconv.Atoi(now.Format("15"))
 		AssertNoError(t, err)
@@ -360,7 +360,7 @@ func TestIngres(t *testing.T) {
 		query := "\\set foo '987'\nSELECT char(:foo, 2);"
 		result, err := testPSQL(query)
 		AssertNoError(t, err)
-		AssertEquals(t, query, "col1\n\n98\n(1 row)", result)
+		AssertEquals(t, "col1\n\n98\n(1 row)", result, query)
 	}
 }
 
@@ -715,9 +715,9 @@ func TestParseFile(t *testing.T) {
 	  
 	  `, sqllexer.DBMSOracle)
 	AssertNoError(t, err)
-	AssertEquals(t, "file", 3, len(result.Split()))
+	AssertEquals(t, 3, len(result.Split()))
 
 	result, err = ParseSql("--comment", sqllexer.DBMSOracle)
 	AssertNoError(t, err)
-	AssertEquals(t, "file", 0, len(result.Split()))
+	AssertEquals(t, 0, len(result.Split()))
 }
