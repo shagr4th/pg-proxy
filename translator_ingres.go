@@ -16,6 +16,10 @@ func IngresTranslator() SqlTranslator {
 	return &ingresTranslator{}
 }
 
+func (t *ingresTranslator) IsCopyLocal() bool {
+	return true
+}
+
 func (v *ingresTranslator) Polyfill() (string, string) {
 	return `SELECT 'a'+'b' /*NOTRANSLATION*/`, `/*NOTRANSLATION*/
 -- OPERATEURS GERANT LE SYMBOLE '+' AVEC DES CHAINES DE CARACTERES
@@ -621,6 +625,16 @@ from information_schema.columns c) as iicolumns`)
 				t = t.Append(",", "NULL", " ", globalNull)
 			}
 			t = t.Append(")")
+
+			FROM := token.Search("FROM", nil, true)
+			if FROM != nil && copyIntoToken == nil && FROM.Next != nil && FROM.Next.Type == sqllexer.STRING {
+				parsed.CopyFrom = FROM.Next.Value[1 : len(FROM.Next.Value)-1]
+				FROM.Next.Set(sqllexer.IDENT, "STDIN")
+			}
+			if copyIntoToken != nil && copyIntoToken.Next != nil && copyIntoToken.Next.Type == sqllexer.STRING {
+				parsed.CopyTo = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
+				copyIntoToken.Next.Set(sqllexer.IDENT, "STDOUT")
+			}
 		}
 	}
 }

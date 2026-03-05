@@ -63,11 +63,6 @@ sur AIX: `nohup ./pg-proxy -translator ingres -override '{"datestyle":"iso,us"}'
 
 * CHAR/VARCHAR trop longs automatiquement tronqués
 
-## Modifs à upstream sur pgbroker ?
-
-* Déplacer le `s.wg.Add(1)` avant le `go func()`
-* Remplacer `conn.RemoteAddr()` par `conn.LocalAddr()` dans la map des clients
-
 ## TOCHECK
 
 https://github.com/ActianCorp/sqlalchemy-ingres/blob/master/lib/sqlalchemy_ingres/base.py

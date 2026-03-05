@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,13 +17,14 @@ import (
 	"maps"
 	"math/big"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/rueian/pgbroker/backend"
-	"github.com/rueian/pgbroker/message"
-	"github.com/rueian/pgbroker/proxy"
+	"schenker/pg-proxy/pgbroker/backend"
+	"schenker/pg-proxy/pgbroker/message"
+	"schenker/pg-proxy/pgbroker/proxy"
 )
 
 type ProxyConfig struct {
@@ -46,6 +48,8 @@ var _ backend.PGResolver = (*ProxyConfig)(nil)
 const (
 	proxyOriginalKey    string = "_proxy_original"
 	proxyTranslationKey string = "_proxy_translation"
+	proxyCopyFromKey    string = "_proxy_copyfrom"
+	proxyCopyToKey      string = "_proxy_copyto"
 	proxyErrorKey       string = "_proxy_error"
 	proxyTimeKey        string = "_proxy_time"
 )
@@ -105,6 +109,8 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		}
 		return msg, nil
 	}
+	ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
+	ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
 	msg.QueryString = parsed.Sql()
 	if config.QueryStore != nil {
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = msg.QueryString
@@ -128,11 +134,9 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 	return msg, nil
 }
 
-func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error {
-	// Send the query to the backend server
-	queryMsg := &message.Query{QueryString: query}
-	if _, err := io.Copy(ctx.ServerConn, queryMsg.Reader()); err != nil {
-		return fmt.Errorf("Polyfill write failed: %w", err)
+func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, reader io.Reader, expectedType byte) ([]byte, error) {
+	if _, err := io.Copy(ctx.ServerConn, reader); err != nil {
+		return nil, fmt.Errorf("Polyfill write failed: %w", err)
 	}
 
 	var result error
@@ -140,7 +144,7 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 	for {
 		header := make([]byte, 5)
 		if _, err := io.ReadFull(ctx.ServerConn, header); err != nil {
-			return fmt.Errorf("Polyfill read failed: %w", err)
+			return nil, fmt.Errorf("Polyfill read failed: %w", err)
 		}
 
 		msgType := header[0]
@@ -150,7 +154,7 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 		if bodyLen > 0 {
 			body = make([]byte, bodyLen)
 			if _, err := io.ReadFull(ctx.ServerConn, body); err != nil {
-				return fmt.Errorf("Polyfill read failed: %w", err)
+				return nil, fmt.Errorf("Polyfill read failed: %w", err)
 			}
 		}
 
@@ -165,8 +169,8 @@ func (config *ProxyConfig) sendQueryToServer(ctx *proxy.Ctx, query string) error
 			}
 		}
 
-		if msgType == 'Z' {
-			return result
+		if msgType == expectedType {
+			return body, result
 		}
 	}
 }
@@ -198,6 +202,8 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 		delete(ctx.ConnInfo.StartupParameters, proxyTranslationKey)
 	}
 	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
+	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
+	delete(ctx.ConnInfo.StartupParameters, proxyCopyToKey)
 }
 
 func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
@@ -212,9 +218,9 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 		config.Polyfilled = true
 		return
 	}
-	err := config.sendQueryToServer(ctx, checkPolyfill)
+	_, err := config.sendQueryToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
 	if err != nil { // seems polyfill is not installed
-		err = config.sendQueryToServer(ctx, createPolyfill)
+		_, err = config.sendQueryToServer(ctx, (&message.Query{QueryString: createPolyfill}).Reader(), 'Z')
 		if config.Verbose&1 == 1 {
 			if err == nil {
 				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", config.clientInfo(ctx), time.Since(start).Microseconds())
@@ -252,6 +258,76 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 		msg.Fields[i].Name = config.RenameColumn(i, msg.Fields[i].Name)
 	}
 	ctx.RowDescription = msg
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
+	copyFrom, ok := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
+	if ok && config.IsCopyLocal() {
+		f, err := os.Open(copyFrom)
+		if err != nil {
+			return msg, err
+		}
+		defer f.Close()
+		buf := make([]byte, 8192)
+		for {
+			n, err := f.Read(buf)
+			if n > 0 {
+				chunk := buf[:n]
+				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
+					return nil, fmt.Errorf("Copy Data write failed: %w", err)
+				}
+			}
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return msg, err
+			}
+		}
+		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
+			return nil, fmt.Errorf("Copy Data write failed: %w", err)
+		}
+		msg.BypassReturn = true
+	}
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
+	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	if ok && config.IsCopyLocal() {
+		f, err := os.Create(copyTo)
+		if err != nil {
+			return msg, err
+		}
+		defer f.Close()
+		msg.BypassReturn = true
+	}
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
+	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	if ok && config.IsCopyLocal() {
+		f, err := os.OpenFile(copyTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return msg, err
+		}
+		defer f.Close()
+		_, err = io.Copy(f, bytes.NewReader(msg.Data))
+		if err != nil {
+			return msg, err
+		}
+		msg.BypassReturn = true
+	}
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
+	_, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	if ok && config.IsCopyLocal() {
+		msg.BypassReturn = true
+	}
 	return msg, nil
 }
 
@@ -375,6 +451,10 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
 	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
+	serverMessageHandlers.AddHandleCopyInResponse(config.handleCopyInResponse)
+	serverMessageHandlers.AddHandleCopyOutResponse(config.handleCopyOutResponse)
+	serverMessageHandlers.AddHandleCopyData(config.handleCopyData)
+	serverMessageHandlers.AddHandleCopyDone(config.handleCopyDone)
 
 	if config.polyfillLock == nil {
 		config.polyfillLock = &sync.RWMutex{}

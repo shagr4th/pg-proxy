@@ -7,7 +7,6 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.33.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/lib/pq v1.11.2
-	github.com/rueian/pgbroker v0.0.19
 )
 
 require (

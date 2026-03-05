@@ -14,6 +14,7 @@ type SqlTranslator interface {
 	Polyfill() (string, string)
 	Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error)
 	RenameColumn(index int, column string) string
+	IsCopyLocal() bool
 }
 
 type SqlEnclosure struct {
@@ -39,6 +40,8 @@ type SqlQuery struct {
 	tokens               []*SqlToken
 	separators           []*SqlToken
 	Transformed          bool
+	CopyFrom             string
+	CopyTo               string
 	PlaceholderPositions []int
 }
 
@@ -51,6 +54,10 @@ func IsoTranslator() SqlTranslator {
 
 func (t *isoTranslator) Polyfill() (string, string) {
 	return "", ""
+}
+
+func (t *isoTranslator) IsCopyLocal() bool {
+	return false
 }
 
 func (t *isoTranslator) RenameColumn(index int, column string) string {

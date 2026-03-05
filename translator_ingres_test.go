@@ -155,6 +155,7 @@ func TestIngres(t *testing.T) {
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
 
+		defer os.Remove("/tmp/test")
 		AssertSqlExec(t, db, false, "COPY TABLE1 TO '/tmp/test'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '/tmp/test'", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '/tmp/test'", 1)
@@ -317,6 +318,7 @@ func TestIngres(t *testing.T) {
 
 func testPSQL(query string) (string, error) {
 	err := os.WriteFile("/tmp/psql.sql", []byte(query), 0666)
+	defer os.Remove("/tmp/psql.sql")
 	if err != nil {
 		return "", err
 	}
