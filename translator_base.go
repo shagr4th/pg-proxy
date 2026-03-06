@@ -267,7 +267,7 @@ func (t *SqlToken) SetValue(value string) *SqlToken {
 }
 
 func (t *SqlToken) Search(value string, until *SqlToken, sameEnclosure bool) *SqlToken {
-	if until == nil && t.Enclosure != nil {
+	if until == nil && t.Enclosure != nil && sameEnclosure {
 		until = t.Enclosure.End
 	}
 

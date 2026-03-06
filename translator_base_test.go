@@ -28,6 +28,16 @@ func TestEnclosingFunction(t *testing.T) {
 		AssertEquals(t, "TRUNC", TRUNC.Value, "IS TRUNC")
 		AssertEquals(t, 1, pos, "IS TRUNC")
 	}
+
+	query := "SELECT CASE TOTO = 1 WHEN 'A' THEN 'B' END, 'A'"
+	parsed, err := ParseSql(query, "none")
+	AssertNoError(t, err, query)
+	TOTO := parsed.First().Search("TOTO", nil, false)
+	AssertEquals(t, "CASE", TOTO.Enclosure.Start.Value, query)
+	A := parsed.First().Search("'A'", nil, false)
+	AssertEquals(t, "CASE", A.Enclosure.Start.Value, query)
+	A = A.Search("'A'", nil, false)
+	AssertEquals(t, nil, A.Enclosure, query)
 }
 
 func TestSeparators(t *testing.T) {
