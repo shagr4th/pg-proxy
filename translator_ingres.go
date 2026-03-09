@@ -409,17 +409,17 @@ from information_schema.columns c) as iicolumns`)
 		enclosure := token.Next.Enclosing
 
 		if token.EqualFold("charextract") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
-			// utilisation de substring a la place de charextract, avec char(1) pour émuler le blank padded
-			// charextract(x, n) -> substring((x)::text, n, 1)::char(1)
-			token.SetValue("substring").Append("(")
+			// utilisation de substring a la place de charextract, avec format() pour émuler le blank padded avec un fixed char
+			// charextract(x, n) -> substring(format('%s', x), n, 1)
+			token.SetValue("substring")
 			beforeComma := enclosure.Heads[1].Prev.Prev
 			if beforeComma != nil {
-				beforeComma.Append(")", "::", "text")
+				enclosure.Heads[0].Prev.Append("format", "(", "'%s'", ",")
+				beforeComma.Append(")")
 				if enclosure.End != nil && enclosure.End.Prev != nil {
 					enclosure.End.Prev.Append(",", "1")
 				}
 			}
-			enclosure.End.Append("::", "char", "(", "1", ")")
 
 		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") ||
 			token.EqualFold("smallint") || token.EqualFold("int") { // Fonctions de cast
@@ -539,9 +539,9 @@ from information_schema.columns c) as iicolumns`)
 				head2Prev.Cut(enclosure.Heads[2])
 				if enclosure.End != nil && enclosure.End.Prev != nil {
 					enclosure.End.Prev.
-						Append(" ", "+", " ", "CAST", "(", "(", "(").
+						Append(" ", "+", " ", "CAST", "(", "(", "format", "(", "'%s'", ",").
 						Paste(addition...).
-						Append(")", "::", "text", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
+						Append(")", "|", "|", "'"+enclosure.Heads[0].Value+"'", ")", " ", "AS", " ", "INTERVAL", ")")
 				}
 			}
 		} else if token.Prev != nil && token.Prev == copyToken {

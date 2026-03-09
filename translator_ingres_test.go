@@ -59,7 +59,7 @@ func TestIngres(t *testing.T) {
 
 	proxyConfig := &ProxyConfig{
 		SqlTranslator:   IngresTranslator(),
-		Verbose:         0,
+		Verbose:         2,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParametersOverride: map[string]string{
 			"datestyle": "iso,us", // forcage du datestyle pour simuler le date_format=US par défaut dans la base Ingres
@@ -139,7 +139,8 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
 		AssertSqlQuery(t, db, "SELECT charextract('ABC', 2)", []string{"B"})
-		AssertSqlQuery(t, db, "SELECT charextract('A', 2)", []string{" "})
+		AssertSqlQuery(t, db, "SELECT charextract('A', 2)", []string{""})
+		AssertSqlQuery(t, db, "SELECT charextract('A'::char(10), 2)", []string{" "})
 		AssertSqlQuery(t, db, "SELECT charextract (charextract('ABC', 2), 1)", []string{"B"})
 		AssertSqlQuery(t, db, "SELECT charextract (456, 2)", []string{"5"})
 		AssertSqlQuery(t, db, "SELECT length ('é')", []string{"1"})
