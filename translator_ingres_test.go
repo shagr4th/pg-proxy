@@ -147,6 +147,8 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT POSITION('a', 'Company')", []string{"5"})
 		AssertSqlQuery(t, db, "SELECT LOCATE('Company', 'z')", []string{"8"})
 		AssertSqlQuery(t, db, "SELECT LOCATE('Company', 'a')", []string{"5"})
+		AssertSqlQuery(t, db, "SELECT nvl(char('b'), 'a')", []string{"b"})
+		AssertSqlQuery(t, db, "SELECT nvl(char(null), 'a')", []string{"a"})
 		AssertSqlQuery(t, db, "SELECT length ('é')", []string{"1"})
 		AssertSqlQuery(t, db, "SELECT date_part('mo', TO_DATE('20170503','YYYYMMDD'))", []int{5})
 		AssertSqlQuery(t, db, "SELECT smallint($1) + int($2)", []string{"-3"}, "01", "-4")
