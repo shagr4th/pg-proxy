@@ -66,7 +66,7 @@ func (v *ingresTranslator) RenameColumn(index int, column string) string {
 	return column
 }
 
-func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error) {
+func (v *ingresTranslator) Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error) {
 	query = strings.TrimSpace(query)
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
@@ -78,7 +78,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 
 	token := parsed.First()
 	for {
-		token, err = v.singleQueryTranslate(parsed, token, polyfilled, withPlaceHolder)
+		token, err = v.singleQueryTranslate(parsed, token, configuration)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +89,7 @@ func (v *ingresTranslator) Translate(query string, polyfilled bool, withPlaceHol
 	return parsed, nil
 }
 
-func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, polyfilled bool, withPlaceHolder bool) (*SqlToken, error) {
+func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, configuration TranslationConfiguration) (*SqlToken, error) {
 	var lastDDLToken *SqlToken = nil
 	var copyToken *SqlToken = nil
 	var copyIntoToken *SqlToken = nil
@@ -290,7 +290,7 @@ from information_schema.columns c) as iicolumns`)
 		} else if token.EqualFold("sysdate") {
 			token.SetValue("current_timestamp")
 			continue
-		} else if token.EqualFold("+") && !polyfilled {
+		} else if token.EqualFold("+") && !configuration.TargetPolyfilled {
 			// Sans opérateur custom (dispo dans le polyfill), PG ne supporte pas la concaténation avec des +, on tente de transformer en || quand on est sûr de maniper des string
 			leftToken := token.Prev
 			rightToken := token.Next
@@ -344,11 +344,11 @@ from information_schema.columns c) as iicolumns`)
 				token = token.SetValue("|").Append("|")
 			}
 			continue
-		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && withPlaceHolder) { // @x ou :x
+		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && configuration.WithPlaceHolder) { // @x ou :x
 			value := token.Value[1:]
 			parameterIndex, err := strconv.Atoi(value)
 			if err != nil {
-				if withPlaceHolder {
+				if configuration.WithPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					// https://docs.actian.com/ingres/12.0/index.html#page/Upgrade/Named_Parameters_in_Parameterized_Queries_in_.NE.htm
@@ -357,7 +357,7 @@ from information_schema.columns c) as iicolumns`)
 				}
 			} else {
 				// un nombre, donc positional parameter
-				if !withPlaceHolder {
+				if !configuration.WithPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(parameterIndex))
 				} else {
 					token.Set(sqllexer.OPERATOR, "?")
@@ -370,7 +370,7 @@ from information_schema.columns c) as iicolumns`)
 			continue
 		} else if token.Type == sqllexer.OPERATOR && token.EqualFold("?") {
 			if token.PlaceHolderPosition > 0 {
-				if !withPlaceHolder {
+				if !configuration.WithPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(token.PlaceHolderPosition))
 				} else {
 					if parsed.PlaceholderPositions == nil {
@@ -380,7 +380,7 @@ from information_schema.columns c) as iicolumns`)
 				}
 			} else if token.Next != nil {
 				if token.Next.Type == sqllexer.NUMBER {
-					if !withPlaceHolder {
+					if !configuration.WithPlaceHolder {
 						token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+token.Next.Value)
 					} else {
 						parameterIndex, err := strconv.Atoi(token.Next.Value)
@@ -395,7 +395,7 @@ from information_schema.columns c) as iicolumns`)
 					}
 					token.Next.Cut(token.Next.Next)
 					token.Append(" ")
-				} else if withPlaceHolder {
+				} else if configuration.WithPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					return nil, fmt.Errorf("named parameter '%s' not supported in postgres", token.Next.Value)
@@ -409,8 +409,8 @@ from information_schema.columns c) as iicolumns`)
 		enclosure := token.Next.Enclosing
 
 		if token.EqualFold("charextract") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
-			// utilisation de substring a la place de charextract
-			// charextract(x, n) -> substring((x)::text, n, 1)
+			// utilisation de substring a la place de charextract, avec char(1) pour émuler le blank padded
+			// charextract(x, n) -> substring((x)::text, n, 1)::char(1)
 			token.SetValue("substring").Append("(")
 			beforeComma := enclosure.Heads[1].Prev.Prev
 			if beforeComma != nil {
@@ -419,6 +419,7 @@ from information_schema.columns c) as iicolumns`)
 					enclosure.End.Prev.Append(",", "1")
 				}
 			}
+			enclosure.End.Append("::", "char", "(", "1", ")")
 
 		} else if token.EqualFold("char") || token.EqualFold("vchar") || token.EqualFold("varchar") ||
 			token.EqualFold("smallint") || token.EqualFold("int") { // Fonctions de cast
@@ -480,6 +481,7 @@ from information_schema.columns c) as iicolumns`)
 			if beforeComma != nil {
 				beforeComma.Append(")")
 			}
+			// TODO ? : right(xxx, 6) => substr(xxx, octet_length(xxx) - 6 + 1)
 		} else if token.EqualFold("date_format") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Type == sqllexer.STRING {
 			token.SetValue("to_char")
 			// https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Date_and_Time_Functions.htm

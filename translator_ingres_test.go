@@ -40,6 +40,7 @@ func TestIngres(t *testing.T) {
 			RuntimePath(pgPath + "/runtime").
 			DataPath(pgPath + "/data").
 			CachePath(pgPath).
+			Encoding("UTF8").
 			Logger(nil).
 			Locale(TestDatabaseEncoding).
 			Database(TestDatabaseName).
@@ -105,6 +106,11 @@ func TestIngres(t *testing.T) {
 	connectionsTest("raw", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", TestUsername, TestPassword, TestDatabasePort, TestDatabaseName), false)
 	connectionsTest("proxy", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=disable", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort), false)
 
+	configuration := TranslationConfiguration{
+		TargetPolyfilled: true,
+		WithPlaceHolder:  false,
+	}
+
 	for _, driver := range []string{"postgres", "pgx"} { // test 2 drivers différents
 		t.Logf("Testing driver %s", driver)
 		db, err := sql.Open(driver, cnxStr)
@@ -133,8 +139,10 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
 		AssertSqlQuery(t, db, "SELECT charextract('ABC', 2)", []string{"B"})
+		AssertSqlQuery(t, db, "SELECT charextract('A', 2)", []string{" "})
 		AssertSqlQuery(t, db, "SELECT charextract (charextract('ABC', 2), 1)", []string{"B"})
 		AssertSqlQuery(t, db, "SELECT charextract (456, 2)", []string{"5"})
+		AssertSqlQuery(t, db, "SELECT length ('é')", []string{"1"})
 		AssertSqlQuery(t, db, "SELECT date_part('mo', TO_DATE('20170503','YYYYMMDD'))", []int{5})
 		AssertSqlQuery(t, db, "SELECT smallint($1) + int($2)", []string{"-3"}, "01", "-4")
 		AssertSqlExec(t, db, true, "drop table if exists test_table4", 0)
@@ -194,7 +202,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select t.HEUREMAJ + COLUMN1  from TABLE1 t", []string{"100100dummy"})
 		AssertSqlQuery(t, db, "select COLUMN1 + HEUREMAJ from TABLE1 t", []string{"dummy100100"})
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
-		parsed, err := proxyConfig.Translate(testQuery, true, false)
+		parsed, err := proxyConfig.Translate(testQuery, configuration)
 		AssertNoError(t, err)
 		AssertEquals(t, false, parsed.Transformed, testQuery)
 
@@ -206,7 +214,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT COLUMN1 FROM TABLE1 LIMIT 1", []string{"XC"})
 
 		testQuery = "EXECUTE PROCEDURE TOTO (ARG = 't')"
-		parsed, err = proxyConfig.Translate(testQuery, true, false)
+		parsed, err = proxyConfig.Translate(testQuery, configuration)
 		AssertNoError(t, err)
 		AssertEquals(t, "CALL TOTO (ARG => 't')", parsed.Sql(), testQuery)
 
@@ -242,7 +250,7 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
-		res, err := proxyConfig.Translate(testQuery, true, false)
+		res, err := proxyConfig.Translate(testQuery, configuration)
 		AssertNoError(t, err)
 		AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
@@ -670,7 +678,10 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 	translator := IngresTranslator()
 
 	for range numThreads * 100 {
-		translator.Translate(large, true, false)
+		translator.Translate(large, TranslationConfiguration{
+			TargetPolyfilled: true,
+			WithPlaceHolder:  false,
+		})
 	}
 	t.Logf("Time for %d rewrites : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 }

@@ -35,7 +35,7 @@ type ProxyConfig struct {
 	KeyFile                   string
 	Verbose                   int
 	KeepOriginal              bool
-	Polyfilled                bool
+	TranslateConfiguration    TranslationConfiguration
 	StartupParametersOverride map[string]string
 	QueryStore                *QueryStore
 	SqlTranslator
@@ -103,7 +103,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	}
 	ctx.ConnInfo.StartupParameters[proxyOriginalKey] = msg.QueryString
 	ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] = fmt.Sprintf("%t", msg.PreparedStatementName != simpleQueryParse)
-	parsed, err := config.Translate(msg.QueryString, config.Polyfilled, false)
+	parsed, err := config.Translate(msg.QueryString, config.TranslateConfiguration)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 	}
@@ -212,7 +212,7 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 }
 
 func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
-	if config.Polyfilled {
+	if config.TranslateConfiguration.TargetPolyfilled {
 		return
 	}
 	config.polyfillLock.Lock()
@@ -220,7 +220,7 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 	start := time.Now()
 	checkPolyfill, createPolyfill := config.Polyfill()
 	if createPolyfill == "" {
-		config.Polyfilled = true
+		config.TranslateConfiguration.TargetPolyfilled = true
 		return
 	}
 	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
@@ -234,7 +234,7 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 			}
 		}
 	}
-	config.Polyfilled = true
+	config.TranslateConfiguration.TargetPolyfilled = true
 }
 
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {

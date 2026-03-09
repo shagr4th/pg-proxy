@@ -12,7 +12,7 @@ import (
 
 type SqlTranslator interface {
 	Polyfill() (string, string)
-	Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error)
+	Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error)
 	RenameColumn(index int, column string) string
 	IsCopyLocal() bool
 }
@@ -45,6 +45,11 @@ type SqlQuery struct {
 	PlaceholderPositions []int
 }
 
+type TranslationConfiguration struct {
+	TargetPolyfilled bool
+	WithPlaceHolder  bool
+}
+
 type isoTranslator struct {
 }
 
@@ -64,7 +69,7 @@ func (t *isoTranslator) RenameColumn(index int, column string) string {
 	return column
 }
 
-func (t *isoTranslator) Translate(query string, polyfilled bool, withPlaceHolder bool) (*SqlQuery, error) {
+func (t *isoTranslator) Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error) {
 	return nil, nil
 }
 
