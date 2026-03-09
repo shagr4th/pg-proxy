@@ -529,6 +529,22 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.Heads[1].Prev.Prev.Append(")", "::", "numeric")
 			}
 			enclosure.Heads[1].Cut(enclosure.Heads[2])
+		} else if token.EqualFold("position") && len(enclosure.Heads) == 2 {
+			if enclosure.Heads[1].Prev != nil {
+				enclosure.Heads[1].Prev.Set(sqllexer.SPACE, " ").Append("in", " ")
+			}
+		} else if token.EqualFold("locate") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
+			// locate(a, b) => COALESCE(NULLIF(position(b in a), 0), length(a) + 1)
+			token.SetValue("COALESCE").Append("(", "NULLIF", "(", "position")
+			firstArg := enclosure.Heads[0].Cut(enclosure.Heads[1].Prev)
+			enclosure.Heads[1].Prev.Cut(enclosure.Heads[1])
+			enclosure.End.Prev.Append(" ", "in", " ").Paste(firstArg...)
+			enclosure.End.Append(",", "0", ")", ",", "length", "(").Paste(firstArg...).Append(")", "+", "1", ")")
+
+		} else if token.EqualFold("to_date") {
+			// TODO
+		} else if token.EqualFold("to_char") {
+			// TODO
 		} else if token.EqualFold("TIMESTAMPADD") && len(enclosure.Heads) == 3 {
 			token.Cut(token.Next) // suppression token de fonction
 			// TIMESTAMPADD(HOUR, 1, SYSDATE) => (current_timestamp + CAST(((1)::text||'HOUR') AS INTERVAL))
