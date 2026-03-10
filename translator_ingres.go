@@ -530,6 +530,18 @@ from information_schema.columns c) as iicolumns`)
 				enclosure.Heads[1].Prev.Prev.Append(")", "::", "numeric")
 			}
 			enclosure.Heads[1].Cut(enclosure.Heads[2])
+		} else if token.EqualFold("decode") && len(enclosure.Heads) >= 4 && len(enclosure.Heads)%2 == 0 {
+			// DECODE(LANG, 'fr', 'French', 'uk', 'English', 'unknown') => CASE WHEN LANG = 'fr' THEN 'French' WHEN LANG = 'uk' THEN 'English' ELSE 'unknown' END
+			firstArg := enclosure.Heads[0].Cut(enclosure.Heads[1].Prev)
+			for i := 2; i < len(enclosure.Heads); i += 2 {
+				enclosure.Heads[i-1].Prev.Set(sqllexer.SPACE, " ").Append("WHEN", " ", "(").Paste(firstArg...).Append(")", " ", "=", " ")
+				enclosure.Heads[i].Prev.Set(sqllexer.SPACE, " ").Append("THEN").Append(" ")
+			}
+			enclosure.Heads[len(enclosure.Heads)-1].Prev.Set(sqllexer.SPACE, " ").Append("ELSE", " ")
+			token.Set(sqllexer.IDENT, "CASE")
+			enclosure.Start.Set(sqllexer.SPACE, " ")
+			enclosure.End.Set(sqllexer.SPACE, " ").Append("END", " ")
+
 		} else if token.EqualFold("position") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
 			enclosure.Heads[1].Prev.Set(sqllexer.SPACE, " ").Append("in", " ")
 
