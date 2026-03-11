@@ -174,7 +174,7 @@ func (q *SqlQuery) reindex() {
 			enclosure = &SqlEnclosure{
 				Start:   token,
 				Heads:   make([]*SqlToken, 0),
-				Keyword: token.Value,
+				Keyword: strings.ToUpper(token.Value),
 			}
 			addHead = true
 			token.Enclosing = enclosure
@@ -518,7 +518,7 @@ func AssertSqlQuery[K comparable](t HasErrorf, db dbExecutor, query string, expe
 func AssertSqlExec(t HasErrorf, db dbExecutor, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
 	res, err := Exec(db, prepare, query, args...)
 	AssertNoError(t, err, query)
-	if query != "" {
+	if query != "" && res != nil {
 		rowsAffected, err := res.RowsAffected()
 		AssertNoError(t, err, query)
 		AssertEquals(t, expectedRowsAffected, rowsAffected, query)
