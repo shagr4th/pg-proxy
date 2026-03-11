@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
@@ -178,8 +179,27 @@ func TestIngres(t *testing.T) {
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
 
+		_, err = os.Stat("/usr/bin/isql")
+		odbcInstalled := err == nil
+
+		_, err = os.Stat("/usr/bin/psql")
+		psqlInstalled := err == nil
+
+		if odbcInstalled {
+			query := "SELECT 'test';"
+			result, err := isql(query)
+			AssertNoError(t, err)
+			AssertEquals(t, true, strings.Contains(result, "1 rows fetched"), query)
+		}
+
 		defer os.Remove(TestCopyFile)
-		AssertSqlExec(t, db, false, "COPY TABLE1 TO '"+TestCopyFile+"'", 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		query := "COPY TABLE1 TO '" + TestCopyFile + "'"
+		AssertSqlExec(t, db, false, query, 1) // false = pas de TX possible pour un COPY, donc pas de prepare avant l'exec
+		if odbcInstalled {
+			odbcResult, err := isql(query)
+			AssertNoError(t, err)
+			AssertEquals(t, true, strings.Contains(odbcResult, "SQLRowCount returns 1"), query)
+		}
 		AssertSqlExec(t, db, false, "COPY TABLE1 (COLUMN1 = varchar(0)tab, heuremaj) INTO '"+TestCopyFile+"'", 1)
 		AssertSqlExec(t, db, false, "COPY TABLE TABLE1 () INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err := os.ReadFile(TestCopyFile)
@@ -320,8 +340,8 @@ func TestIngres(t *testing.T) {
 		currentHour, err := strconv.Atoi(now.Format("15"))
 		AssertNoError(t, err)
 		AssertSqlQuery(t, db, "select TO_CHAR(TIMESTAMPADD(HOUR, 1, SYSDATE), 'HH24')", []string{fmt.Sprintf("%02d", (currentHour+1)%24)})
-		AssertSqlExec(t, db, false, "modify TABLE1 to btree unique on column1, heuremaj with location=(ii_database), fillfactor = 80, extend = 16, allocation = 4", 0)
-		AssertSqlExec(t, db, false, "modify TABLE2 to isam on column2 with fillfactor = 80, extend = 16, page_size = 8192", 0)
+		AssertSqlExec(t, db, true, "modify TABLE1 to btree unique on column1, heuremaj with location=(ii_database), fillfactor = 80, extend = 16, allocation = 4", 0)
+		AssertSqlExec(t, db, true, "modify TABLE2 to isam on column2 with fillfactor = 80, extend = 16, page_size = 8192", 0)
 		AssertSqlExec(t, db, true, "DROP SEQUENCE IF EXISTS seq_tarif", 0)
 		AssertSqlExec(t, db, true, "CREATE SEQUENCE seq_tarif INCREMENT BY 1 MINVALUE 1 MAXVALUE 100000 START 1", 0)
 		AssertSqlQuery(t, db, "select seq_tarif.nextval", []int{1})
@@ -373,18 +393,30 @@ func TestIngres(t *testing.T) {
 
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE1", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE TABLE2", 0)
+
+		if psqlInstalled {
+			query := "\\set foo '987'\nSELECT char(:foo, 2);"
+			result, err := psql(query)
+			AssertNoError(t, err)
+			AssertEquals(t, "col1\n\n98\n(1 row)", result, query)
+		}
 	}
 
-	// sudo apt-get update && sudo apt-get install postgresql-client
-	if _, err = os.Stat("/usr/bin/psql"); err == nil {
-		query := "\\set foo '987'\nSELECT char(:foo, 2);"
-		result, err := testPSQL(query)
-		AssertNoError(t, err)
-		AssertEquals(t, "col1\n\n98\n(1 row)", result, query)
-	}
 }
 
-func testPSQL(query string) (string, error) {
+func isql(query string) (string, error) {
+	cmd := exec.Command("isql", "-k",
+		"DRIVER={PostgreSQL Unicode};SERVER=localhost;PORT="+fmt.Sprint(TestProxyPort)+";DATABASE="+TestDatabaseName+"@localhost:"+fmt.Sprint(TestDatabasePort)+";UID="+TestUsername+";PWD="+TestPassword,
+	)
+	cmd.Stdin = bytes.NewBufferString(query)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), err
+	}
+	return string(output), nil
+}
+
+func psql(query string) (string, error) {
 	err := os.WriteFile("/tmp/psql.sql", []byte(query), 0666)
 	defer os.Remove("/tmp/psql.sql")
 	if err != nil {

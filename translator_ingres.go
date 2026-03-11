@@ -226,7 +226,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				if on.Prev != nil {
 					on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", indexName)
 				}
-				on.Append(" ", tableToken.Value, "(").Last().Append(")", ";", "CLUSTER", " ", tableToken.Value, " ", "USING", " ", indexName)
+				on.Append(" ", tableToken.Value, "(").Last().Append(")") //, ";", "CLUSTER", " ", tableToken.Value, " ", "USING", " ", indexName)
 			}
 		}
 	} else if token.EqualFold("COPY") {
