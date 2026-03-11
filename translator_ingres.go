@@ -215,10 +215,11 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				} else {
 					tableToken.Cut(on)
 				}
+				indexName := fmt.Sprintf("midx_%s", tableToken.Value)
 				if on.Prev != nil {
-					on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", fmt.Sprintf("midx_%s", tableToken.Value))
+					on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", indexName)
 				}
-				on.Append(" ", tableToken.Value, "(").Last().Append(")")
+				on.Append(" ", tableToken.Value, "(").Last().Append(")", ";", "CLUSTER", " ", tableToken.Value, " ", "USING", " ", indexName)
 			}
 		}
 	} else if token.EqualFold("COPY") {
