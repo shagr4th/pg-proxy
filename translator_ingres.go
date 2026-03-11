@@ -143,13 +143,6 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				}
 			}
 		}
-		INDEX := token.Search("INDEX", nil, true)
-		if INDEX != nil {
-			EXISTS := token.Search("EXISTS", nil, true)
-			if EXISTS == nil {
-				INDEX.Append(" ", "IF", " ", "NOT", " ", "EXISTS", " ")
-			}
-		}
 	} else if token.EqualFold("UPDATE") {
 		FROM := token.Search("FROM", nil, true)
 		SET := token.Search("SET", nil, true)
@@ -215,18 +208,21 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			}
 			on := tableToken.Search("ON", nil, true)
 			if on != nil {
-				token.SetValue("CREATE")
+				token.SetValue("DO")
+				tableName := tableToken.Value
+				indexName := fmt.Sprintf("midx_%s", tableName)
+				token.Append(" ", "$$ DECLARE ri RECORD; BEGIN FOR ri IN SELECT indexname FROM pg_indexes WHERE tablename = '"+tableName+
+					"' LOOP EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(ri.indexname); END LOOP; CREATE")
 				unique := tableToken.Search("UNIQUE", nil, true)
 				if unique != nil {
 					tableToken.Cut(unique)
 				} else {
 					tableToken.Cut(on)
 				}
-				indexName := fmt.Sprintf("midx_%s", tableToken.Value)
 				if on.Prev != nil {
-					on.Prev.Append(" ", "INDEX", " ", "IF", " ", "NOT", " ", "EXISTS", " ", indexName)
+					on.Prev.Append(" ", "INDEX", " ", indexName)
 				}
-				on.Append(" ", tableToken.Value, "(").Last().Append(")") //, ";", "CLUSTER", " ", tableToken.Value, " ", "USING", " ", indexName)
+				on.Append(" ", tableName, "(").Last().Append("); CLUSTER ", tableName, " USING ", indexName, "; END; $$;")
 			}
 		}
 	} else if token.EqualFold("COPY") {
@@ -255,10 +251,8 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		if tableToken != nil && tableToken.Next != nil {
 			tableToken.Cut(tableToken.Next)
 		}
-	} else if token.EqualFold("EXECUTE") {
-		if token.Next != nil && token.Next.EqualFold("PROCEDURE") {
-			token.Next.Cut(token.Next.Next)
-		}
+	} else if token.EqualFold("EXECUTE") && token.Next != nil && token.Next.EqualFold("PROCEDURE") {
+		token.Next.Cut(token.Next.Next)
 		token.SetValue("CALL")
 		if token.Next != nil && token.Next.Next != nil && token.Next.Next.Enclosing != nil && len(token.Next.Next.Enclosing.Heads) > 0 {
 			equals := token.Next.Next.Enclosing.Heads[0]
