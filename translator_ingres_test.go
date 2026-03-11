@@ -363,10 +363,16 @@ func TestIngres(t *testing.T) {
 			err = tx.Commit()
 			AssertNoError(t, err)
 
+			err = os.Remove(TestCopyFile)
+			AssertNoError(t, err)
+			defer os.Remove(TestCopyFile)
 			tx, err = db.Begin()
 			AssertNoError(t, err)
 			AssertSqlExec(t, tx, true, "COPY TABLE2 INTO $1", size, TestCopyFile)
 			err = tx.Commit()
+			AssertNoError(t, err)
+
+			_, err = os.Stat(TestCopyFile)
 			AssertNoError(t, err)
 
 			AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)

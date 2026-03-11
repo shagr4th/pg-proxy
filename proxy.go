@@ -116,6 +116,9 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		if parsed.CopyTo != "" {
 			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
 		}
+		if config.IsCopyLocal() && (parsed.CopyFrom == "$1" || parsed.CopyTo == "$1") {
+			msg.ParameterIDs = []uint32{25}
+		}
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
@@ -275,15 +278,16 @@ func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *messa
 func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
 	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
 	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") && ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
+	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") &&
+		ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" && len(msg.ParameterValues) > 0 {
 		value := msg.ParameterValues[0].DataBytes()
 		if copyTo == "$1" {
 			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = string(value)
 		} else if copyFrom == "$1" {
 			ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = string(value)
 		}
-		msg.ParameterFormatCodes = []uint16{}
-		msg.ParameterValues = []message.Value{}
+		//msg.ParameterFormatCodes = []uint16{}
+		//msg.ParameterValues = []message.Value{}
 	}
 	return msg, nil
 }
