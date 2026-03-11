@@ -267,7 +267,7 @@ func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *messa
 	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
 	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
 	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") && ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
-		msg.ParameterIDs = []uint32{0}
+		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
 	return msg, nil
 }
