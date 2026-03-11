@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type Server struct {
 	OnHandleConnError             func(err error, ctx *Ctx, conn net.Conn)
 	Splice                        bool
 	TLSConfig                     *tls.Config
+	ProtocolDebug                 bool
 
 	wg      sync.WaitGroup
 	ln      net.Listener
@@ -207,7 +209,7 @@ func (s *Server) handleConn(ctx *Ctx, client net.Conn) (err error) {
 			clientCh <- err
 		} else {
 			if s.ClientMessageHandlers != nil {
-				clientCh <- s.processMessages(ctx, client, server, s.ClientMessageHandlers)
+				clientCh <- s.processMessages("client", ctx, client, server, s.ClientMessageHandlers)
 			} else if s.ClientStreamCallbackFactories != nil {
 				clientCh <- s.processStreamCallback(ctx, client, server, s.ClientStreamCallbackFactories)
 			}
@@ -221,7 +223,7 @@ func (s *Server) handleConn(ctx *Ctx, client net.Conn) (err error) {
 			serverCh <- err
 		} else {
 			if s.ServerMessageHandlers != nil {
-				serverCh <- s.processMessages(ctx, server, client, s.ServerMessageHandlers)
+				serverCh <- s.processMessages("server", ctx, server, client, s.ServerMessageHandlers)
 			} else if s.ServerStreamCallbackFactories != nil {
 				serverCh <- s.processStreamCallback(ctx, server, client, s.ServerStreamCallbackFactories)
 			}
@@ -257,7 +259,7 @@ func (s *Server) readStartupMessage(client io.Reader) (message.Reader, error) {
 	return message.ReadStartupMessage(data)
 }
 
-func (s *Server) processMessages(ctx *Ctx, r io.Reader, w io.Writer, hg MessageHandlerRegister) (err error) {
+func (s *Server) processMessages(typ string, ctx *Ctx, r io.Reader, w io.Writer, hg MessageHandlerRegister) (err error) {
 	rb := newMsgBuffer(r, 4096)
 	wb := bufio.NewWriter(w)
 
@@ -266,6 +268,9 @@ func (s *Server) processMessages(ctx *Ctx, r io.Reader, w io.Writer, hg MessageH
 		ms, err = rb.ReadMessage()
 		if err != nil {
 			return err
+		}
+		if s.ProtocolDebug {
+			log.Printf("[PROTOCOL] Received %s message for process %d from %s", typ, ctx.ConnInfo.BackendProcessID, ctx.ConnInfo.StartupParameters["user"])
 		}
 		if handler := hg.GetHandler(ms[0]); handler != nil {
 			var msg message.Reader

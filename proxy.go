@@ -495,5 +495,6 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 		ClientMessageHandlers:    clientMessageHandlers,
 		ServerMessageHandlers:    serverMessageHandlers,
 		OnHandleConnError:        config.handleConnError,
+		ProtocolDebug:            config.Verbose&8 == 8,
 	}, nil
 }
