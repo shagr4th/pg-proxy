@@ -55,8 +55,7 @@ jobs:
           go build \
             -ldflags="-X main.commit=${{ gitea.ref_name }}" \
             -trimpath \
-            -o ${{ matrix.asset_name }} \
-            ./...
+            -o ${{ matrix.asset_name }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
