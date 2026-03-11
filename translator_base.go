@@ -18,10 +18,9 @@ type SqlTranslator interface {
 }
 
 type SqlEnclosure struct {
-	Start   *SqlToken
-	End     *SqlToken
-	Keyword string // "(" = (...), "CASE" = CASE...END
-	Heads   []*SqlToken
+	Start *SqlToken
+	End   *SqlToken
+	Heads []*SqlToken
 }
 
 type SqlToken struct {
@@ -165,26 +164,25 @@ func (q *SqlQuery) reindex() {
 		token.Index = i
 		token.Enclosure = enclosure
 		if addHead && enclosure != nil && token.Type != sqllexer.SPACE {
-			if enclosure.Keyword != "(" || !token.EqualFold(")") { // cas sans arguments, genre FUNCTION()
+			if enclosure.Start.Value != "(" || !token.EqualFold(")") { // cas sans arguments, genre FUNCTION()
 				enclosure.Heads = append(enclosure.Heads, token)
 			}
 			addHead = false
 		}
 		if token.EqualFold("(") || token.EqualFold("CASE") {
 			enclosure = &SqlEnclosure{
-				Start:   token,
-				Heads:   make([]*SqlToken, 0),
-				Keyword: strings.ToUpper(token.Value),
+				Start: token,
+				Heads: make([]*SqlToken, 0),
 			}
 			addHead = true
 			token.Enclosing = enclosure
 		} else if enclosure != nil && enclosure.Start != nil &&
-			((enclosure.Keyword == "(" && token.EqualFold(")")) || (enclosure.Keyword == "CASE" && token.EqualFold("END"))) {
+			((enclosure.Start.EqualFold("(") && token.EqualFold(")")) || (enclosure.Start.EqualFold("CASE") && token.EqualFold("END"))) {
 			enclosure.End = token
 			enclosure = enclosure.Start.Enclosure
 			addHead = false
-		} else if enclosure != nil &&
-			((enclosure.Keyword == "(" && token.EqualFold(",")) || (enclosure.Keyword == "CASE" && (token.EqualFold("WHEN") || token.EqualFold("ELSE")))) {
+		} else if enclosure != nil && enclosure.Start != nil &&
+			((enclosure.Start.EqualFold("(") && token.EqualFold(",")) || (enclosure.Start.EqualFold("CASE") && (token.EqualFold("WHEN") || token.EqualFold("ELSE") || token.EqualFold("THEN")))) {
 			addHead = true
 		} else if token.EqualFold(";") && token.Type == sqllexer.PUNCTUATION {
 			q.separators = append(q.separators, token)

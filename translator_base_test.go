@@ -34,10 +34,18 @@ func TestEnclosingFunction(t *testing.T) {
 	AssertNoError(t, err, query)
 	TOTO := parsed.First().Search("TOTO", nil, false)
 	AssertEquals(t, "CASE", TOTO.Enclosure.Start.Value, query)
+	AssertEquals(t, 3, len(TOTO.Enclosure.Heads))
 	A := parsed.First().Search("'A'", nil, false)
 	AssertEquals(t, "CASE", A.Enclosure.Start.Value, query)
 	A = A.Search("'A'", nil, false)
 	AssertEquals(t, nil, A.Enclosure, query)
+
+	query = "SELECT CASE TOTO = 1 WHEN 'A' THEN 'B' ELSE 'C' END, 'A'"
+	parsed, err = ParseSql(query, "none")
+	AssertNoError(t, err, query)
+	A = parsed.First().Search("'A'", nil, false)
+	AssertEquals(t, "CASE", A.Enclosure.Start.Value, query)
+	AssertEquals(t, 4, len(A.Enclosure.Heads), query)
 }
 
 func TestSeparators(t *testing.T) {
