@@ -209,10 +209,19 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			on := tableToken.Search("ON", nil, true)
 			if on != nil {
 				token.SetValue("DO")
-				tableName := tableToken.Value
+				fullTableName := tableToken.Value
+				tableName := fullTableName
+				schemaName := ""
+				if strings.Contains(tableName, ".") {
+					schemaName = "'" + tableName[:strings.Index(tableName, ".")] + "'"
+					tableName = tableName[strings.Index(tableName, ".")+1:]
+				} else {
+					schemaName = "current_schema()"
+				}
 				indexName := fmt.Sprintf("midx_%s", tableName)
-				token.Append(" ", "$$ DECLARE ri RECORD; BEGIN FOR ri IN SELECT indexname FROM pg_indexes WHERE tablename = '"+tableName+
-					"' LOOP EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(ri.indexname); END LOOP; CREATE")
+				token.Append(" ", "$$ DECLARE ri RECORD; BEGIN FOR ri IN SELECT indexname FROM pg_indexes "+
+					"WHERE tablename = '"+tableName+"' AND schemaname = "+schemaName+
+					" LOOP EXECUTE 'DROP INDEX IF EXISTS ' || quote_ident(ri.indexname); END LOOP; CREATE")
 				unique := tableToken.Search("UNIQUE", nil, true)
 				if unique != nil {
 					tableToken.Cut(unique)
@@ -222,7 +231,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				if on.Prev != nil {
 					on.Prev.Append(" ", "INDEX", " ", indexName)
 				}
-				on.Append(" ", tableName, "(").Last().Append("); CLUSTER ", tableName, " USING ", indexName, "; END; $$;")
+				on.Append(" ", fullTableName, "(").Last().Append("); CLUSTER " + fullTableName + " USING " + indexName + "; END; $$;")
 			}
 		}
 	} else if token.EqualFold("COPY") {
