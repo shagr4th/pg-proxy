@@ -110,8 +110,12 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
 	}
 	if parsed != nil {
-		ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
-		ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
+		if parsed.CopyFrom != "" {
+			ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
+		}
+		if parsed.CopyTo != "" {
+			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
+		}
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
@@ -255,6 +259,31 @@ func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminat
 func (config *ProxyConfig) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.AuthenticationOk) (*message.AuthenticationOk, error) {
 	if config.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Server authentification OK (%d)\n", config.clientInfo(ctx), msg.ID)
+	}
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
+	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
+	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") && ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
+		msg.ParameterIDs = []uint32{0}
+	}
+	return msg, nil
+}
+
+func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
+	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
+	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
+	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") && ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
+		value := msg.ParameterValues[0].DataBytes()
+		if copyTo == "$1" {
+			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = string(value)
+		} else if copyFrom == "$1" {
+			ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = string(value)
+		}
+		msg.ParameterFormatCodes = []uint16{}
+		msg.ParameterValues = []message.Value{}
 	}
 	return msg, nil
 }
@@ -473,6 +502,8 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	clientMessageHandlers.AddHandleQuery(config.handleQuery)
 	clientMessageHandlers.AddHandleParse(config.handleParse)
 	clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
+	clientMessageHandlers.AddHandleBind(config.handleBind)
+	serverMessageHandlers.AddHandleParameterDescription(config.handleParameterDescription)
 	serverMessageHandlers.AddHandleRowDescription(config.handleRowDescription)
 	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
 	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
