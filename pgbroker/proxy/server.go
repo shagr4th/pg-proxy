@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log"
@@ -270,7 +271,7 @@ func (s *Server) processMessages(typ string, ctx *Ctx, r io.Reader, w io.Writer,
 			return err
 		}
 		if s.ProtocolDebug {
-			log.Printf("[PROTOCOL] Received %s message from %s for process %d (%s)", string(ms[0]), typ, ctx.ConnInfo.BackendProcessID, ctx.ConnInfo.StartupParameters["user"])
+			log.Printf("[PROTOCOL] Received %s message from %s (%s) for process %d (%s)", string(ms[0]), typ, hex.EncodeToString(ms), ctx.ConnInfo.BackendProcessID, ctx.ConnInfo.StartupParameters["user"])
 		}
 		if handler := hg.GetHandler(ms[0]); handler != nil {
 			var msg message.Reader
