@@ -101,8 +101,8 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		ctx.ConnInfo.StartupParameters[proxyTimeKey] = start.Format(time.RFC3339)
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
 	}
-	ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = ""
-	ctx.ConnInfo.StartupParameters[proxyCopyToKey] = ""
+	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
+	delete(ctx.ConnInfo.StartupParameters, proxyCopyToKey)
 	ctx.ConnInfo.StartupParameters[proxyOriginalKey] = msg.QueryString
 	ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] = fmt.Sprintf("%t", msg.PreparedStatementName != simpleQueryParse)
 	parsed, err := config.Translate(msg.QueryString, config.TranslateConfiguration)
