@@ -143,6 +143,13 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				}
 			}
 		}
+		INDEX := token.Search("INDEX", nil, true)
+		if INDEX != nil {
+			EXISTS := token.Search("EXISTS", nil, true)
+			if EXISTS == nil {
+				INDEX.Append(" ", "IF", " ", "NOT", " ", "EXISTS", " ")
+			}
+		}
 	} else if token.EqualFold("UPDATE") {
 		FROM := token.Search("FROM", nil, true)
 		SET := token.Search("SET", nil, true)
@@ -273,7 +280,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 case t.table_type when 'VIEW' then 'V' else 'T' end as table_type,
 -1 as num_rows, -1 as number_pages, '' as location_name from information_schema.tables t
 union
-select i.tablename as table_name, i.schemaname as table_owner, null as create_date, null as alter_date,
+select i.indexname as table_name, i.schemaname as table_owner, null as create_date, null as alter_date,
 'I' as table_type, -1 as num_rows, -1 as number_pages, '' as location_name from pg_indexes i) as iitables`)
 			continue
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iicolumns") {

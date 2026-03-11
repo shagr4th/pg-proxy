@@ -508,7 +508,11 @@ func AssertSqlRowCount[K comparable](t HasErrorf, db dbExecutor, query string, e
 func AssertSqlQuery[K comparable](t HasErrorf, db dbExecutor, query string, expectedResults []K, args ...any) ([]*K, error) {
 	result := AssertSqlRowCount[K](t, db, query, len(expectedResults), args...)
 	for i := range result {
-		AssertEquals(t, expectedResults[i], *result[i], query)
+		if i < len(expectedResults) {
+			AssertEquals(t, expectedResults[i], *result[i], query)
+		} else {
+			return nil, fmt.Errorf("Discrepancy in expected result count")
+		}
 	}
 	return result, nil
 }
