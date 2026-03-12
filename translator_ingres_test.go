@@ -60,7 +60,7 @@ func TestIngres(t *testing.T) {
 
 	proxyConfig := &ProxyConfig{
 		SqlTranslator:   IngresTranslator(),
-		Verbose:         0,
+		Verbose:         2,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParametersOverride: map[string]string{
 			"datestyle": "iso,us", // forcage du datestyle pour simuler le date_format=US par défaut dans la base Ingres
@@ -214,6 +214,11 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, "dummy:100100\n", string(tmpTest), TestCopyFile)
 		AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '"+TestCopyFile+"'", 1)
+
+		AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(10), heuremaj) INTO '"+TestCopyFile+"'", 1)
+		tmpTest, err = os.ReadFile(TestCopyFile)
+		AssertNoError(t, err)
+		AssertEquals(t, "dummy     100100\n", string(tmpTest), TestCopyFile)
 
 		AssertSqlExec(t, db, false, "COPY table TABLE2 (COLUMN2 = colon with null('bouh')) INTO '"+TestCopyFile+"'", 2)
 		tmpTest, err = os.ReadFile(TestCopyFile)

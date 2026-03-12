@@ -604,31 +604,29 @@ from information_schema.columns c) as iicolumns`)
 				//columnName := enclosure.Heads[i].Value
 				var columnWithNull string
 				var columnTypeToken *SqlToken = nil
-				var columnSize int = -1
+				var columnSize string
 				var columnDummy = false
 				if hasEquals != nil {
 					cutted := hasEquals.Cut(endOfHead)
+					coldelimiter := ""
 					for _, c := range cutted {
 						if c.EqualFold("=") || c.Type == sqllexer.SPACE {
 							continue
 						}
 						val := strings.ToLower(c.Value)
-						if delimiter == "" && strings.HasSuffix(val, "tab") {
-							delimiter = "'\\t'"
-						} else if delimiter == "" && strings.HasSuffix(val, "colon") {
-							delimiter = "':'"
-						} else if delimiter == "" && strings.HasSuffix(val, "ssv") {
-							delimiter = "';'"
-						} else if delimiter == "" && (strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv")) {
-							delimiter = "','"
-						} else if strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
-							coldelimiter := c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
+						if coldelimiter == "" && strings.HasSuffix(val, "tab") {
+							coldelimiter = "'\\t'"
+						} else if coldelimiter == "" && strings.HasSuffix(val, "colon") {
+							coldelimiter = "':'"
+						} else if coldelimiter == "" && strings.HasSuffix(val, "ssv") {
+							coldelimiter = "';'"
+						} else if coldelimiter == "" && strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv") {
+							coldelimiter = "','"
+						} else if coldelimiter == "" && strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
+							coldelimiter = c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
 							if strings.HasPrefix(coldelimiter, "'d") {
 								columnDummy = true
 								coldelimiter = "'" + coldelimiter[len(coldelimiter)-2:]
-							}
-							if delimiter == "" {
-								delimiter = coldelimiter
 							}
 						}
 
@@ -640,9 +638,21 @@ from information_schema.columns c) as iicolumns`)
 						if columnTypeToken == nil {
 							columnTypeToken = c
 							columnDummy = columnDummy || strings.HasPrefix(columnTypeToken.Value, "d")
-						} else if columnSize == -1 && c.Type == sqllexer.NUMBER {
-							columnSize, _ = strconv.Atoi(c.Value)
+						} else if columnSize == "" && c.Type == sqllexer.NUMBER {
+							columnSize = c.Value
 						}
+					}
+					if coldelimiter == "" {
+						if i < len(enclosure.Heads)-1 && endOfHead != nil {
+							if copyIntoToken != nil && columnSize != "" && columnSize != "0" && columnTypeToken != nil &&
+								endOfHead.Prev != nil && enclosure.Heads[i] != nil {
+								enclosure.Heads[i].Prev.Append("format", "(", "'%s'", ",", "(")
+								endOfHead.Prev.Append(")", "::", columnTypeToken.Value, "(", columnSize, ")", ")")
+							}
+							endOfHead.SetValue("||")
+						}
+					} else if delimiter == "" {
+						delimiter = coldelimiter
 					}
 				}
 				if globalNull == "" && columnWithNull != "" {
