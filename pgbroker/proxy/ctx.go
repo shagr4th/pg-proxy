@@ -26,4 +26,5 @@ type Ctx struct {
 	AuthPhase      AuthPhase
 	Context        context.Context
 	Cancel         context.CancelFunc
+	QueryContext   any
 }

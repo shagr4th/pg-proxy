@@ -71,7 +71,7 @@ func (v *ingresTranslator) Translate(query string, configuration TranslationConf
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
 	}
-	query = strings.ReplaceAll(query, "$ingres.iidb", "ingres.iidb")
+	query = strings.ReplaceAll(query, "$ingres.ii", "ii")
 	parsed, err := ParseSql(query, sqllexer.DBMSOracle) // Oracle car c'est uniquement utilisé dans sqllexer.go pour gérer les positional parameters ':x', supportés aussi sous Ingres
 	if err != nil {
 		return nil, err
@@ -240,19 +240,19 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		copyIntoToken = token.Search("INTO", nil, true)
 		if copyIntoToken != nil {
 			copyIntoToken.SetValue(copyIntoToken.Value[2:])
-			if v.IsCopyLocal() && copyIntoToken.Next != nil && !copyIntoToken.Next.EqualFold("STDOUT") {
-				parsed.CopyFile = copyIntoToken.Next.Value
+			if copyIntoToken.Next != nil && !copyIntoToken.Next.EqualFold("STDOUT") {
+				parsed.LocalCopy = copyIntoToken.Next.Value
 				if copyIntoToken.Next.Type == sqllexer.STRING {
-					parsed.CopyFile = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
+					parsed.LocalCopy = copyIntoToken.Next.Value[1 : len(copyIntoToken.Next.Value)-1]
 				}
 				copyIntoToken.Next.Set(sqllexer.IDENT, "STDOUT")
 			}
 		} else {
 			FROM := token.Search("FROM", nil, true)
-			if v.IsCopyLocal() && FROM != nil && FROM.Next != nil && !FROM.Next.EqualFold("STDIN") {
-				parsed.CopyFile = FROM.Next.Value
+			if FROM != nil && FROM.Next != nil && !FROM.Next.EqualFold("STDIN") {
+				parsed.LocalCopy = FROM.Next.Value
 				if FROM.Next.Type == sqllexer.STRING {
-					parsed.CopyFile = FROM.Next.Value[1 : len(FROM.Next.Value)-1]
+					parsed.LocalCopy = FROM.Next.Value[1 : len(FROM.Next.Value)-1]
 				}
 				FROM.Next.Set(sqllexer.IDENT, "STDIN")
 			}
@@ -285,7 +285,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		} else if token.Type == sqllexer.IDENT && token.StartsWith("session.") {
 			token.SetValue(token.Value[8:])
 			continue
-		} else if token.Type == sqllexer.IDENT && token.EqualFold("ingres.iidb_subcomments") {
+		} else if token.Type == sqllexer.IDENT && token.EqualFold("iidb_subcomments") {
 			token.SetValue(`(select
 	c.table_name as object_name, c.table_schema as object_owner, c.column_name as subobject_name, 'C' as subobject_type, '' as short_remark, 1 as text_sequence, pgd.description AS long_remark
 	FROM information_schema.columns c

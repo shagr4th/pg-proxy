@@ -6,18 +6,19 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 )
 
 const maxQueryBufferSize = 2000
 
 // QueryRecord holds information about a single SQL query that passed through the proxy.
 type QueryRecord struct {
-	Time        string `json:"time"`
-	Duration    string `json:"duration"`
-	ClientInfo  string `json:"client"`
-	OriginalSQL string `json:"original"`
-	FinalSQL    string `json:"final"` // empty when not transformed
-	Error       string `json:"error"` // translation error, if any
+	Time        time.Time `json:"time"`
+	Duration    int64     `json:"duration"`
+	ClientInfo  string    `json:"client"`
+	OriginalSQL string    `json:"original"`
+	FinalSQL    string    `json:"final"` // empty when not transformed
+	Error       error     `json:"error"` // translation error, if any
 }
 
 // QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.

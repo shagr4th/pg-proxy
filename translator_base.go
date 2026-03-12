@@ -14,7 +14,6 @@ type SqlTranslator interface {
 	Polyfill() (string, string)
 	Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error)
 	RenameColumn(index int, column string) string
-	IsCopyLocal() bool
 }
 
 type SqlEnclosure struct {
@@ -39,7 +38,7 @@ type SqlQuery struct {
 	tokens               []*SqlToken
 	separators           []*SqlToken
 	Transformed          bool
-	CopyFile             string
+	LocalCopy            string
 	PlaceholderPositions []int
 }
 
