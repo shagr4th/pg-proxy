@@ -71,6 +71,13 @@ func (v *ingresTranslator) Translate(query string, configuration TranslationConf
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
 	}
+	query = strings.ReplaceAll(query, "$ingres.iidb_subcomments", `(select
+c.table_name as object_name, c.table_schema as object_owner, c.column_name as subobject_name, 'C' as subobject_type, '' as short_remark, 1 as text_sequence, pgd.description AS long_remark
+FROM information_schema.columns c
+LEFT JOIN pg_catalog.pg_statio_all_tables st ON c.table_schema = st.schemaname AND c.table_name = st.relname
+LEFT JOIN pg_catalog.pg_description pgd ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+where pgd.description is not null
+ORDER BY c.table_schema, c.table_name, c.ordinal_position)`)
 	parsed, err := ParseSql(query, sqllexer.DBMSOracle) // Oracle car c'est uniquement utilisé dans sqllexer.go pour gérer les positional parameters ':x', supportés aussi sous Ingres
 	if err != nil {
 		return nil, err
@@ -646,8 +653,12 @@ from information_schema.columns c) as iicolumns`)
 						if i < len(enclosure.Heads)-1 && endOfHead != nil {
 							if copyIntoToken != nil && columnSize != "" && columnSize != "0" && columnTypeToken != nil &&
 								endOfHead.Prev != nil && enclosure.Heads[i] != nil {
+								columnType := columnTypeToken.Value
+								if columnTypeToken.EqualFold("vchar") {
+									columnType = "varchar"
+								}
 								enclosure.Heads[i].Prev.Append("format", "(", "'%s'", ",", "(")
-								endOfHead.Prev.Append(")", "::", columnTypeToken.Value, "(", columnSize, ")", ")")
+								endOfHead.Prev.Append(")", "::", columnType, "(", columnSize, ")", ")")
 							}
 							endOfHead.SetValue("||")
 						}
