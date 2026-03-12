@@ -71,13 +71,7 @@ func (v *ingresTranslator) Translate(query string, configuration TranslationConf
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
 	}
-	query = strings.ReplaceAll(query, "$ingres.iidb_subcomments", `(select
-c.table_name as object_name, c.table_schema as object_owner, c.column_name as subobject_name, 'C' as subobject_type, '' as short_remark, 1 as text_sequence, pgd.description AS long_remark
-FROM information_schema.columns c
-LEFT JOIN pg_catalog.pg_statio_all_tables st ON c.table_schema = st.schemaname AND c.table_name = st.relname
-LEFT JOIN pg_catalog.pg_description pgd ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
-where pgd.description is not null
-ORDER BY c.table_schema, c.table_name, c.ordinal_position)`)
+	query = strings.ReplaceAll(query, "$ingres.iidb", "ingres.iidb")
 	parsed, err := ParseSql(query, sqllexer.DBMSOracle) // Oracle car c'est uniquement utilisé dans sqllexer.go pour gérer les positional parameters ':x', supportés aussi sous Ingres
 	if err != nil {
 		return nil, err
@@ -291,18 +285,26 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		} else if token.Type == sqllexer.IDENT && token.StartsWith("session.") {
 			token.SetValue(token.Value[8:])
 			continue
+		} else if token.Type == sqllexer.IDENT && token.EqualFold("ingres.iidb_subcomments") {
+			token.SetValue(`(select
+	c.table_name as object_name, c.table_schema as object_owner, c.column_name as subobject_name, 'C' as subobject_type, '' as short_remark, 1 as text_sequence, pgd.description AS long_remark
+	FROM information_schema.columns c
+	LEFT JOIN pg_catalog.pg_statio_all_tables st ON c.table_schema = st.schemaname AND c.table_name = st.relname
+	LEFT JOIN pg_catalog.pg_description pgd ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
+	where pgd.description is not null
+	ORDER BY c.table_schema, c.table_name, c.ordinal_position)`)
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iitables") {
 			token.SetValue(`(select t.table_name, t.table_schema as table_owner, null as create_date, null as alter_date,
 case t.table_type when 'VIEW' then 'V' else 'T' end as table_type,
 -1 as num_rows, -1 as number_pages, '' as location_name from information_schema.tables t
 union
 select i.indexname as table_name, i.schemaname as table_owner, null as create_date, null as alter_date,
-'I' as table_type, -1 as num_rows, -1 as number_pages, '' as location_name from pg_indexes i) as iitables`)
+'I' as table_type, -1 as num_rows, -1 as number_pages, '' as location_name from pg_indexes i)`)
 			continue
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iicolumns") {
 			token.SetValue(`(select c.table_name, c.table_schema as table_owner, c.column_name, case c.is_nullable when 'YES' then 'Y' else 'N' end as column_nulls,
 c.ordinal_position as column_sequence, c.data_type as column_datatype, c.character_maximum_length as column_length, c.numeric_scale as column_scale, 0 as key_sequence
-from information_schema.columns c) as iicolumns`)
+from information_schema.columns c)`)
 			continue
 		} else if token.Type == sqllexer.IDENT && strings.HasSuffix(strings.ToLower(token.Value), ".nextval") {
 			sequence := token.Value[0:(len(token.Value) - 8)]

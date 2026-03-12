@@ -60,7 +60,7 @@ func TestIngres(t *testing.T) {
 
 	proxyConfig := &ProxyConfig{
 		SqlTranslator:   IngresTranslator(),
-		Verbose:         2,
+		Verbose:         0,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParametersOverride: map[string]string{
 			"datestyle": "iso,us", // forcage du datestyle pour simuler le date_format=US par défaut dans la base Ingres
@@ -350,6 +350,8 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "DROP SEQUENCE IF EXISTS seq_tarif", 0)
 		AssertSqlExec(t, db, true, "CREATE SEQUENCE seq_tarif INCREMENT BY 1 MINVALUE 1 MAXVALUE 100000 START 1", 0)
 		AssertSqlQuery(t, db, "select seq_tarif.nextval", []int{1})
+
+		AssertSqlQuery(t, db, "select tcom.long_remark from $ingres.iidb_subcomments tcom where tcom.object_name = 'tr_jfac_recep_aaaamm' and tcom.object_owner = 'archive'", []string{})
 
 		AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		start := time.Now()
