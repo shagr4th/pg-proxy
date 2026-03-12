@@ -84,7 +84,10 @@ func (config *ProxyConfig) RewriteParameters(original map[string]string) map[str
 
 func (config *ProxyConfig) getQueryContext(ctx *proxy.Ctx) *QueryContext {
 	if ctx != nil && ctx.QueryContext != nil {
-		return ctx.QueryContext.(*QueryContext)
+		ctxt, ok := ctx.QueryContext.(*QueryContext)
+		if ok {
+			return ctxt
+		}
 	}
 	return nil
 }
