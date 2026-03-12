@@ -52,7 +52,9 @@ type QueryContext struct {
 	FinalSQL    string    `json:"final"` // empty when not transformed
 	Error       error     `json:"error"` // translation error, if any
 	Translated  *SqlQuery
-	Prepared    bool
+
+	ongoingCopyQuery bool
+	prepared         bool
 }
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -107,7 +109,8 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	queryCtxt.Time = time.Now()
 	queryCtxt.OriginalSQL = msg.QueryString
 	queryCtxt.FinalSQL = ""
-	queryCtxt.Prepared = true
+	queryCtxt.prepared = true
+	queryCtxt.ongoingCopyQuery = false
 	queryCtxt.Translated, queryCtxt.Error = config.Translate(msg.QueryString, config.TranslateConfiguration)
 	if queryCtxt.Translated == nil || !queryCtxt.Translated.Transformed {
 		if config.Verbose&4 == 4 {
@@ -118,6 +121,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		msg.ParameterIDs = []uint32{25}
 
 	}
+	queryCtxt.ongoingCopyQuery = queryCtxt.Translated.LocalCopy != ""
 	queryCtxt.FinalSQL = queryCtxt.Translated.Sql()
 	msg.QueryString = queryCtxt.FinalSQL
 	if config.KeepOriginal {
@@ -137,7 +141,7 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 	parseMsg, _ := config.handleParse(ctx, &message.Parse{
 		QueryString: msg.QueryString,
 	})
-	queryCtxt.Prepared = false
+	queryCtxt.prepared = false
 	if parseMsg != nil {
 		msg.QueryString = parseMsg.QueryString
 	}
@@ -189,7 +193,7 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 	if queryCtxt == nil {
 		return
 	}
-	if queryCtxt.OriginalSQL != "" && (queryCtxt.Translated == nil || queryCtxt.Translated.LocalCopy == "") {
+	if queryCtxt.OriginalSQL != "" && !queryCtxt.ongoingCopyQuery {
 		if config.QueryStore != nil {
 			config.QueryStore.Add(QueryRecord{
 				Time:        queryCtxt.Time,
@@ -266,7 +270,7 @@ func (config *ProxyConfig) handleBackendKeyData(ctx *proxy.Ctx, msg *message.Bac
 
 func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
 	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" && queryCtxt.Prepared {
+	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" && queryCtxt.prepared {
 		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
 	return msg, nil
@@ -275,7 +279,7 @@ func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *messa
 func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
 	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" &&
-		queryCtxt.Prepared && len(msg.ParameterValues) > 0 {
+		queryCtxt.prepared && len(msg.ParameterValues) > 0 {
 		queryCtxt.Translated.LocalCopy = string(msg.ParameterValues[0].DataBytes())
 	}
 	return msg, nil
@@ -291,7 +295,11 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 
 func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
 	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
+	if queryCtxt == nil {
+		return msg, nil
+	}
+	queryCtxt.ongoingCopyQuery = false
+	if queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
 		}
@@ -322,7 +330,7 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
 			return nil, fmt.Errorf("Copy Done send failed: %w", err)
 		}
-		if queryCtxt.Prepared {
+		if queryCtxt.prepared {
 			if _, err := io.Copy(ctx.ServerConn, message.ReadSync([]byte{}).Reader()); err != nil {
 				return nil, fmt.Errorf("Sync send failed: %w", err)
 			}
@@ -337,7 +345,11 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 
 func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
 	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
+	if queryCtxt == nil {
+		return msg, nil
+	}
+	queryCtxt.ongoingCopyQuery = false
+	if queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
 		}
@@ -382,9 +394,7 @@ func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone)
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
 	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil {
-		if queryCtxt.Translated != nil {
-			queryCtxt.Translated.LocalCopy = ""
-		}
+		queryCtxt.ongoingCopyQuery = false
 		var errorMessage string
 		var errorCode string
 		for i, err := range msg.Fields {
