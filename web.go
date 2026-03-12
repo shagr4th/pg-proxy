@@ -18,7 +18,7 @@ type QueryRecord struct {
 	ClientInfo  string    `json:"client"`
 	OriginalSQL string    `json:"original"`
 	FinalSQL    string    `json:"final"` // empty when not transformed
-	Error       error     `json:"error"` // translation error, if any
+	Error       string    `json:"error"` // translation error, if any
 }
 
 // QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.

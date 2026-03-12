@@ -50,7 +50,7 @@ type QueryContext struct {
 	ClientInfo  string    `json:"client"`
 	OriginalSQL string    `json:"original"`
 	FinalSQL    string    `json:"final"` // empty when not transformed
-	Error       error     `json:"error"` // translation error, if any
+	Error       string    `json:"error"` // translation error, if any
 	Translated  *SqlQuery
 
 	ongoingCopyQuery bool
@@ -111,7 +111,11 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	queryCtxt.FinalSQL = ""
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
-	queryCtxt.Translated, queryCtxt.Error = config.Translate(msg.QueryString, config.TranslateConfiguration)
+	var err error
+	queryCtxt.Translated, err = config.Translate(msg.QueryString, config.TranslateConfiguration)
+	if err != nil {
+		queryCtxt.Error = err.Error()
+	}
 	if queryCtxt.Translated == nil || !queryCtxt.Translated.Transformed {
 		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", queryCtxt.ClientInfo, msg.QueryString)
@@ -119,7 +123,6 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 		return msg, nil
 	} else if queryCtxt.Translated.LocalCopy == "$1" {
 		msg.ParameterIDs = []uint32{25}
-
 	}
 	queryCtxt.ongoingCopyQuery = queryCtxt.Translated.LocalCopy != ""
 	queryCtxt.FinalSQL = queryCtxt.Translated.Sql()
@@ -207,7 +210,7 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 		queryCtxt.OriginalSQL = ""
 		queryCtxt.FinalSQL = ""
 	}
-	queryCtxt.Error = nil
+	queryCtxt.Error = ""
 }
 
 func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
@@ -401,10 +404,10 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 			switch err.Type {
 			case 77:
 				errorMessage = err.Value
-				if queryCtxt.OriginalSQL != "" && queryCtxt.Error == nil { // erreur postgres sans traduction en erreur
-					queryCtxt.Error = errors.New(err.Value)
+				if queryCtxt.OriginalSQL != "" && queryCtxt.Error == "" { // erreur postgres sans traduction en erreur
+					queryCtxt.Error = err.Value
 					errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, queryCtxt.OriginalSQL)
-				} else if queryCtxt.Error != nil { // erreur interne du proxy
+				} else if queryCtxt.Error != "" { // erreur interne du proxy
 					if queryCtxt.OriginalSQL == "" {
 						queryCtxt.OriginalSQL = "<unknown>"
 					}
