@@ -82,15 +82,22 @@ func (config *ProxyConfig) RewriteParameters(original map[string]string) map[str
 	return original
 }
 
+func (config *ProxyConfig) getQueryContext(ctx *proxy.Ctx) *QueryContext {
+	if ctx != nil && ctx.QueryContext != nil {
+		return ctx.QueryContext.(*QueryContext)
+	}
+	return nil
+}
+
 func (config *ProxyConfig) handleConnError(err error, ctx *proxy.Ctx, conn net.Conn) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if err != io.EOF && config.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("WARN  [%s] Connection error : %v", queryCtxt.ClientInfo, err)
 	}
 }
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
@@ -120,7 +127,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 }
 
 func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
@@ -175,7 +182,7 @@ func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, fi
 }
 
 func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return
 	}
@@ -211,7 +218,7 @@ func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
 	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
 	if err != nil { // seems polyfill is not installed
 		_, err = config.sendDataToServer(ctx, (&message.Query{QueryString: createPolyfill}).Reader(), 'Z')
-		queryCtxt := ctx.QueryContext.(*QueryContext)
+		queryCtxt := config.getQueryContext(ctx)
 		if config.Verbose&1 == 1 && queryCtxt != nil {
 			if err == nil {
 				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", queryCtxt.ClientInfo, time.Since(start).Microseconds())
@@ -230,7 +237,7 @@ func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.Read
 }
 
 func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if config.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("INFO  [%s] Client sent termination\n", queryCtxt.ClientInfo)
 	}
@@ -255,7 +262,7 @@ func (config *ProxyConfig) handleBackendKeyData(ctx *proxy.Ctx, msg *message.Bac
 }
 
 func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" && queryCtxt.Prepared {
 		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
@@ -263,7 +270,7 @@ func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *messa
 }
 
 func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" &&
 		queryCtxt.Prepared && len(msg.ParameterValues) > 0 {
 		queryCtxt.Translated.LocalCopy = string(msg.ParameterValues[0].DataBytes())
@@ -280,7 +287,7 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 }
 
 func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
@@ -326,7 +333,7 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 }
 
 func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
@@ -342,7 +349,7 @@ func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.Co
 }
 
 func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		f, err := os.OpenFile(queryCtxt.Translated.LocalCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
@@ -359,7 +366,7 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 }
 
 func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
@@ -370,7 +377,7 @@ func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone)
 }
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
-	queryCtxt := ctx.QueryContext.(*QueryContext)
+	queryCtxt := config.getQueryContext(ctx)
 	if queryCtxt != nil {
 		if queryCtxt.Translated != nil {
 			queryCtxt.Translated.LocalCopy = ""
