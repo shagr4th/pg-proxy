@@ -46,13 +46,13 @@ var _ backend.PGStartupMessageRewriter = (*ProxyConfig)(nil)
 var _ backend.PGResolver = (*ProxyConfig)(nil)
 
 const (
-	proxyOriginalKey         string = "_proxy_original"
+	proxyQueryKey            string = "_proxy_query"
 	proxyTranslationKey      string = "_proxy_translation"
-	proxyCopyFromKey         string = "_proxy_copyfrom"
-	proxyCopyFromExtendedKey string = "_proxy_copyfrome"
-	proxyCopyToKey           string = "_proxy_copyto"
+	proxyCopyFileKey         string = "_proxy_copyfile"
+	proxyExtendedModeKey     string = "_proxy_extended"
 	proxyErrorKey            string = "_proxy_error"
 	proxyTimeKey             string = "_proxy_time"
+	proxyOngoingCopyQueryKey string = "_proxy_ongoing_copy_query"
 )
 
 func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -97,41 +97,37 @@ const simpleQueryParse = "simpleQueryParse"
 
 func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	start := time.Now()
-	if config.QueryStore != nil {
-		ctx.ConnInfo.StartupParameters[proxyTimeKey] = start.Format(time.RFC3339)
-		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
-	}
-	delete(ctx.ConnInfo.StartupParameters, proxyCopyFromKey)
-	delete(ctx.ConnInfo.StartupParameters, proxyCopyToKey)
-	ctx.ConnInfo.StartupParameters[proxyOriginalKey] = msg.QueryString
-	ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] = fmt.Sprintf("%t", msg.PreparedStatementName != simpleQueryParse)
+	ctx.ConnInfo.StartupParameters[proxyTimeKey] = start.Format(time.RFC3339)
+	ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
+	ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] = ""
+	ctx.ConnInfo.StartupParameters[proxyErrorKey] = ""
+	ctx.ConnInfo.StartupParameters[proxyCopyFileKey] = ""
+	ctx.ConnInfo.StartupParameters[proxyQueryKey] = msg.QueryString
+	ctx.ConnInfo.StartupParameters[proxyExtendedModeKey] = fmt.Sprintf("%t", msg.PreparedStatementName != simpleQueryParse)
 	parsed, err := config.Translate(msg.QueryString, config.TranslateConfiguration)
 	if err != nil {
 		ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Error()
-	}
-	if parsed != nil {
-		if parsed.CopyFrom != "" {
-			ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = parsed.CopyFrom
-		}
-		if parsed.CopyTo != "" {
-			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = parsed.CopyTo
-		}
-		if config.IsCopyLocal() && (parsed.CopyFrom == "$1" || parsed.CopyTo == "$1") {
-			msg.ParameterIDs = []uint32{25}
-		}
 	}
 	if parsed == nil || !parsed.Transformed {
 		if config.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", config.clientInfo(ctx), msg.QueryString)
 		}
 		return msg, nil
+	} else {
+		ctx.ConnInfo.StartupParameters[proxyCopyFileKey] = parsed.CopyFile
+		if config.IsCopyLocal() && parsed.CopyFile != "" {
+			ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] = "true"
+			if parsed.CopyFile == "$1" {
+				msg.ParameterIDs = []uint32{25}
+			}
+		}
 	}
 	msg.QueryString = parsed.Sql()
 	if config.QueryStore != nil {
 		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = msg.QueryString
 	}
 	if config.KeepOriginal {
-		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(msg.QueryString, "\n", "\n-- "), "\r", "")
+		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(ctx.ConnInfo.StartupParameters[proxyQueryKey], "\n", "\n-- "), "\r", "")
 	}
 	if config.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s in %d µs\n", config.clientInfo(ctx), msg.QueryString, time.Since(start).Microseconds())
@@ -191,8 +187,8 @@ func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, fi
 }
 
 func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
-	originalQuery, originalQueryFound := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
-	if originalQueryFound {
+	query := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+	if query != "" && ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] != "true" {
 		if config.QueryStore != nil {
 			start, hasStart := ctx.ConnInfo.StartupParameters[proxyTimeKey]
 			duration := ""
@@ -207,16 +203,16 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 				Time:        start,
 				Duration:    duration,
 				ClientInfo:  config.clientInfo(ctx),
-				OriginalSQL: originalQuery,
+				OriginalSQL: query,
 				FinalSQL:    ctx.ConnInfo.StartupParameters[proxyTranslationKey],
 				Error:       ctx.ConnInfo.StartupParameters[proxyErrorKey],
 			})
 		}
-		delete(ctx.ConnInfo.StartupParameters, proxyOriginalKey)
-		delete(ctx.ConnInfo.StartupParameters, proxyTimeKey)
-		delete(ctx.ConnInfo.StartupParameters, proxyTranslationKey)
+		ctx.ConnInfo.StartupParameters[proxyQueryKey] = ""
+		ctx.ConnInfo.StartupParameters[proxyTimeKey] = ""
+		ctx.ConnInfo.StartupParameters[proxyTranslationKey] = ""
 	}
-	delete(ctx.ConnInfo.StartupParameters, proxyErrorKey)
+	ctx.ConnInfo.StartupParameters[proxyErrorKey] = ""
 }
 
 func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
@@ -267,27 +263,18 @@ func (config *ProxyConfig) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.A
 }
 
 func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
-	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
-	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") && ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if config.IsCopyLocal() && copyFile == "$1" && ctx.ConnInfo.StartupParameters[proxyExtendedModeKey] == "true" {
 		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
 	return msg, nil
 }
 
 func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
-	copyFrom := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
-	copyTo := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if config.IsCopyLocal() && (copyTo == "$1" || copyFrom == "$1") &&
-		ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" && len(msg.ParameterValues) > 0 {
-		value := msg.ParameterValues[0].DataBytes()
-		if copyTo == "$1" {
-			ctx.ConnInfo.StartupParameters[proxyCopyToKey] = string(value)
-		} else if copyFrom == "$1" {
-			ctx.ConnInfo.StartupParameters[proxyCopyFromKey] = string(value)
-		}
-		//msg.ParameterFormatCodes = []uint16{}
-		//msg.ParameterValues = []message.Value{}
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if config.IsCopyLocal() && copyFile == "$1" &&
+		ctx.ConnInfo.StartupParameters[proxyExtendedModeKey] == "true" && len(msg.ParameterValues) > 0 {
+		ctx.ConnInfo.StartupParameters[proxyCopyFileKey] = string(msg.ParameterValues[0].DataBytes())
 	}
 	return msg, nil
 }
@@ -301,12 +288,13 @@ func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.Row
 }
 
 func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
-	copyFrom, ok := ctx.ConnInfo.StartupParameters[proxyCopyFromKey]
-	if ok && config.IsCopyLocal() {
+	ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] = ""
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if copyFile != "" && config.IsCopyLocal() {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy from %s\n", config.clientInfo(ctx), copyFrom)
+			log.Printf("INFO  [%s] Will copy from %s\n", config.clientInfo(ctx), copyFile)
 		}
-		f, err := os.Open(copyFrom)
+		f, err := os.Open(copyFile)
 		if err != nil {
 			return msg, err
 		}
@@ -316,7 +304,7 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 			n, err := f.Read(buf)
 			if n > 0 {
 				if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-					log.Printf("INFO  [%s] Read %d bytes from %s\n", config.clientInfo(ctx), n, copyFrom)
+					log.Printf("INFO  [%s] Read %d bytes from %s\n", config.clientInfo(ctx), n, copyFile)
 				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
@@ -333,13 +321,13 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
 			return nil, fmt.Errorf("Copy Done send failed: %w", err)
 		}
-		if ctx.ConnInfo.StartupParameters[proxyCopyFromExtendedKey] == "true" {
+		if ctx.ConnInfo.StartupParameters[proxyExtendedModeKey] == "true" {
 			if _, err := io.Copy(ctx.ServerConn, message.ReadSync([]byte{}).Reader()); err != nil {
 				return nil, fmt.Errorf("Sync send failed: %w", err)
 			}
 		}
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy from %s done\n", config.clientInfo(ctx), copyFrom)
+			log.Printf("INFO  [%s] Copy from %s done\n", config.clientInfo(ctx), copyFile)
 		}
 		msg.BypassReturn = true
 	}
@@ -347,12 +335,13 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 }
 
 func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
-	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if ok && config.IsCopyLocal() {
+	ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] = ""
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if copyFile != "" && config.IsCopyLocal() {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy to %s\n", config.clientInfo(ctx), copyTo)
+			log.Printf("INFO  [%s] Will copy to %s\n", config.clientInfo(ctx), copyFile)
 		}
-		f, err := os.Create(copyTo)
+		f, err := os.Create(copyFile)
 		if err != nil {
 			return msg, err
 		}
@@ -363,9 +352,9 @@ func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.Co
 }
 
 func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
-	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if ok && config.IsCopyLocal() {
-		f, err := os.OpenFile(copyTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if copyFile != "" && config.IsCopyLocal() {
+		f, err := os.OpenFile(copyFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return msg, err
 		}
@@ -380,10 +369,10 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 }
 
 func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
-	copyTo, ok := ctx.ConnInfo.StartupParameters[proxyCopyToKey]
-	if ok && config.IsCopyLocal() {
+	copyFile := ctx.ConnInfo.StartupParameters[proxyCopyFileKey]
+	if copyFile != "" && config.IsCopyLocal() {
 		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy to %s done\n", config.clientInfo(ctx), copyTo)
+			log.Printf("INFO  [%s] Copy to %s done\n", config.clientInfo(ctx), copyFile)
 		}
 		msg.BypassReturn = true
 	}
@@ -391,19 +380,20 @@ func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone)
 }
 
 func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
+	ctx.ConnInfo.StartupParameters[proxyOngoingCopyQueryKey] = ""
 	var errorMessage string
 	var errorCode string
 	for i, err := range msg.Fields {
 		switch err.Type {
 		case 77:
 			errorMessage = err.Value
-			query, queryFound := ctx.ConnInfo.StartupParameters[proxyOriginalKey]
-			queryError, errorFound := ctx.ConnInfo.StartupParameters[proxyErrorKey]
-			if queryFound && !errorFound { // erreur postgres sans traduction en erreur
+			query := ctx.ConnInfo.StartupParameters[proxyQueryKey]
+			queryError := ctx.ConnInfo.StartupParameters[proxyErrorKey]
+			if query != "" && queryError == "" { // erreur postgres sans traduction en erreur
 				ctx.ConnInfo.StartupParameters[proxyErrorKey] = err.Value
 				errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, query)
-			} else if errorFound { // erreur interne du proxy
-				if !queryFound {
+			} else if queryError != "" { // erreur interne du proxy
+				if query == "" {
 					query = "<unknown>"
 				}
 				errorMessage = fmt.Sprintf("pg-proxy error: %v (from query: %s) (postgres error: %s)", queryError, query, err.Value)

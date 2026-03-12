@@ -36,8 +36,6 @@ Usage of ./pg-proxy:
 
 Lancement en mode Ingres: `pg-proxy -translator ingres -override '{"datestyle":"iso,us"}' -remote postgreshost:5432` (on surcharge datestyle pour simuler le date_format=US par défaut dans la base Ingres)
 
-sur AIX: `nohup ./pg-proxy -translator ingres -override '{"datestyle":"iso,us"}' -remote mnusvlingest03:5432 -web-port 5000 -web-secret ingres -verbose 3 &`
-
 ### Translated syntax
 
 * Parsing multi ordres: `SAVEPOINT XXX; CREATE TABLE YYY; SET ZZZ=`, etc.

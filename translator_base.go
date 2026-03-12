@@ -39,8 +39,7 @@ type SqlQuery struct {
 	tokens               []*SqlToken
 	separators           []*SqlToken
 	Transformed          bool
-	CopyFrom             string
-	CopyTo               string
+	CopyFile             string
 	PlaceholderPositions []int
 }
 
