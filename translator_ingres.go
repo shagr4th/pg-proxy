@@ -293,6 +293,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 	LEFT JOIN pg_catalog.pg_description pgd ON pgd.objoid = st.relid AND pgd.objsubid = c.ordinal_position
 	where pgd.description is not null
 	ORDER BY c.table_schema, c.table_name, c.ordinal_position)`)
+			continue
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iitables") {
 			token.SetValue(`(select t.table_name, t.table_schema as table_owner, null as create_date, null as alter_date,
 case t.table_type when 'VIEW' then 'V' else 'T' end as table_type,
