@@ -90,6 +90,39 @@ func (v *ingresTranslator) Translate(query string, configuration TranslationConf
 	return parsed, nil
 }
 
+func (v *ingresTranslator) canInferNumericToken(token *SqlToken) bool {
+	return token != nil && (token.Type == sqllexer.NUMBER || token.Type == sqllexer.POSITIONAL_PARAMETER)
+}
+
+func (v *ingresTranslator) forceParameterNumericCast(token *SqlToken) {
+	if token != nil && token.Type == sqllexer.POSITIONAL_PARAMETER &&
+		(token.Next != nil && token.Next.EqualFold("*", "/", "-") && v.canInferNumericToken(token.Next.Next) ||
+			(token.Prev != nil && token.Prev.EqualFold("*", "/", "-") && v.canInferNumericToken(token.Prev.Prev))) {
+		token.Append("::", "numeric")
+	}
+}
+
+func (v *ingresTranslator) functionCharAsParam(token *SqlToken, argIndex int) bool {
+	return argIndex == 0 && token != nil && token.EqualFold("rtrim", "ltrim",
+		"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
+		"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze")
+}
+
+func (v *ingresTranslator) functionReturnsChar(token *SqlToken) bool {
+	if token == nil {
+		return false
+	}
+	nextToken := token.Next
+	if nextToken == nil || nextToken.Enclosing == nil {
+		return false
+	}
+	return token.EqualFold("rtrim", "ltrim", "char", "vchar", "varchar", "to_char", "charextract", "format",
+		"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
+		"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze") ||
+		// ifnull(YYY, 'toto') est une string function à cause de 'toto' :
+		(token.EqualFold("ifnull", "coalesce") && len(nextToken.Enclosing.Heads) == 2 && nextToken.Enclosing.Heads[1].Type == sqllexer.STRING)
+}
+
 func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, configuration TranslationConfiguration) (*SqlToken, error) {
 	var lastDDLToken *SqlToken = nil
 	var copyToken *SqlToken = nil
@@ -325,39 +358,21 @@ from information_schema.columns c)`)
 				continue
 			}
 
-			ingresFunctionCharAsParam := func(t *SqlToken, argIndex int) bool {
-				return argIndex == 0 && t.EqualFold("rtrim", "ltrim",
-					"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
-					"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze")
-			}
-
-			ingresFunctionReturnsChar := func(t *SqlToken) bool {
-				nextToken := t.Next
-				if nextToken == nil || nextToken.Enclosing == nil {
-					return false
-				}
-				return t.EqualFold("rtrim", "ltrim", "char", "vchar", "varchar", "to_char", "charextract", "format",
-					"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
-					"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze") ||
-					// ifnull(YYY, 'toto') est une string function à cause de 'toto' :
-					(t.EqualFold("ifnull", "coalesce") && len(nextToken.Enclosing.Heads) == 2 && nextToken.Enclosing.Heads[1].Type == sqllexer.STRING)
-			}
-
 			hasStrings := false
 			if leftToken.Type == sqllexer.STRING || // le membre de gauche est un char
 				rightToken.Type == sqllexer.STRING || // le membre de droite est un char
-				ingresFunctionReturnsChar(rightToken) { // le membre de droite est un appel a une fonction qui retourne un type char
+				v.functionReturnsChar(rightToken) { // le membre de droite est un appel a une fonction qui retourne un type char
 				hasStrings = true
 			}
 			if !hasStrings {
 				topFunction, argumentIndex := token.EnclosingFunction()
 				// l'appel qui englobe l'argument contenant le "+" est une fonction string qui prend une string en paramètre, ca a du sens de remplacer par un || aussi
-				hasStrings = topFunction != nil && ingresFunctionCharAsParam(topFunction, argumentIndex)
+				hasStrings = topFunction != nil && v.functionCharAsParam(topFunction, argumentIndex)
 			}
 			if !hasStrings && leftToken.EqualFold(")") {
 				// le membre de gauche est un appel a une fonction qui retourne un type char
 				leftFunction, _ := leftToken.EnclosingFunction()
-				hasStrings = leftFunction != nil && ingresFunctionReturnsChar(leftFunction)
+				hasStrings = leftFunction != nil && v.functionReturnsChar(leftFunction)
 			}
 			if !hasStrings && leftToken.EqualFold("text") {
 				// le membre de gauche est qqchose qui est suffixé par ::text
@@ -386,6 +401,7 @@ from information_schema.columns c)`)
 				// un nombre, donc positional parameter
 				if !configuration.WithPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(parameterIndex))
+					v.forceParameterNumericCast(token)
 				} else {
 					token.Set(sqllexer.OPERATOR, "?")
 					if parsed.PlaceholderPositions == nil {
@@ -394,6 +410,9 @@ from information_schema.columns c)`)
 					parsed.PlaceholderPositions = append(parsed.PlaceholderPositions, parameterIndex)
 				}
 			}
+			continue
+		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !configuration.WithPlaceHolder {
+			v.forceParameterNumericCast(token)
 			continue
 		} else if token.Type == sqllexer.OPERATOR && token.EqualFold("?") {
 			if token.PlaceHolderPosition > 0 {
@@ -630,7 +649,7 @@ from information_schema.columns c)`)
 							coldelimiter = "':'"
 						} else if coldelimiter == "" && strings.HasSuffix(val, "ssv") {
 							coldelimiter = "';'"
-						} else if coldelimiter == "" && strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv") {
+						} else if coldelimiter == "" && (strings.HasSuffix(val, "comma") || strings.HasSuffix(val, "csv")) {
 							coldelimiter = "','"
 						} else if coldelimiter == "" && strings.HasSuffix(val, "'") && strings.Contains(val[:len(val)-1], "'") {
 							coldelimiter = c.Value[strings.LastIndex(val[:len(val)-1], "'"):]
