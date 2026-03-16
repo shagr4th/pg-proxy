@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"bytes"
@@ -25,9 +25,10 @@ import (
 	"schenker/pg-proxy/pgbroker/backend"
 	"schenker/pg-proxy/pgbroker/message"
 	"schenker/pg-proxy/pgbroker/proxy"
+	"schenker/pg-proxy/sqlutils"
 )
 
-type ProxyConfig struct {
+type ProxyInstance struct {
 	Host                      string
 	Port                      int
 	Remote                    string
@@ -36,15 +37,15 @@ type ProxyConfig struct {
 	Verbose                   int
 	KeepOriginal              bool
 	StartupParametersOverride map[string]string
-	QueryStore                *QueryStore
-	SqlTranslator
+	sqlutils.Translator
 
+	queryStore       *QueryStore
 	systemPolyfilled bool
 	polyfillLock     *sync.RWMutex
 }
 
-var _ backend.PGStartupMessageRewriter = (*ProxyConfig)(nil)
-var _ backend.PGResolver = (*ProxyConfig)(nil)
+var _ backend.PGStartupMessageRewriter = (*ProxyInstance)(nil)
+var _ backend.PGResolver = (*ProxyInstance)(nil)
 
 type QueryContext struct {
 	Time        time.Time `json:"time"`
@@ -52,13 +53,13 @@ type QueryContext struct {
 	OriginalSQL string    `json:"original"`
 	FinalSQL    string    `json:"final"` // empty when not transformed
 	Error       string    `json:"error"` // translation error, if any
-	Translated  *SqlQuery
+	Query       *sqlutils.Query
 
 	ongoingCopyQuery bool
 	prepared         bool
 }
 
-func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
+func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
 	remote, ok := parameters["proxy.remote"]
 	if ok && remote != "" {
 		return net.Dial("tcp", remote)
@@ -72,20 +73,20 @@ func (config *ProxyConfig) GetPGConn(ctx context.Context, clientAddr net.Addr, p
 		parameters["proxy.remote"] = remote
 		return net.Dial("tcp", remote)
 	}
-	if len(config.Remote) == 0 {
+	if len(instance.Remote) == 0 {
 		return nil, fmt.Errorf("remote host not found ! Try 'database@host:port' as the database name (found %s)", database)
 	}
-	return net.Dial("tcp", config.Remote)
+	return net.Dial("tcp", instance.Remote)
 }
 
-func (config *ProxyConfig) RewriteParameters(original map[string]string) map[string]string {
-	if config.StartupParametersOverride != nil {
-		maps.Copy(original, config.StartupParametersOverride)
+func (instance *ProxyInstance) RewriteParameters(original map[string]string) map[string]string {
+	if instance.StartupParametersOverride != nil {
+		maps.Copy(original, instance.StartupParametersOverride)
 	}
 	return original
 }
 
-func (config *ProxyConfig) getQueryContext(ctx *proxy.Ctx) *QueryContext {
+func (instance *ProxyInstance) getQueryContext(ctx *proxy.Ctx) *QueryContext {
 	if ctx != nil && ctx.QueryContext != nil {
 		ctxt, ok := ctx.QueryContext.(*QueryContext)
 		if ok {
@@ -95,15 +96,15 @@ func (config *ProxyConfig) getQueryContext(ctx *proxy.Ctx) *QueryContext {
 	return nil
 }
 
-func (config *ProxyConfig) handleConnError(err error, ctx *proxy.Ctx, conn net.Conn) {
-	queryCtxt := config.getQueryContext(ctx)
-	if err != io.EOF && config.Verbose&1 == 1 && queryCtxt != nil {
+func (instance *ProxyInstance) handleConnError(err error, ctx *proxy.Ctx, conn net.Conn) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if err != io.EOF && instance.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("WARN  [%s] Connection error : %v", queryCtxt.ClientInfo, err)
 	}
 }
 
-func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
@@ -113,36 +114,36 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
 	var err error
-	queryCtxt.Translated, err = config.Translate(msg.QueryString, config.systemPolyfilled)
+	queryCtxt.Query, err = instance.Translate(msg.QueryString, instance.systemPolyfilled)
 	if err != nil {
 		queryCtxt.Error = err.Error()
 	}
-	if queryCtxt.Translated == nil || !queryCtxt.Translated.Transformed {
-		if config.Verbose&4 == 4 {
+	if queryCtxt.Query == nil || !queryCtxt.Query.Transformed {
+		if instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] %s\n", queryCtxt.ClientInfo, msg.QueryString)
 		}
 		return msg, nil
-	} else if queryCtxt.Translated.LocalCopy == "$1" {
+	} else if queryCtxt.Query.LocalCopy == "$1" {
 		msg.ParameterIDs = []uint32{25}
 	}
-	queryCtxt.ongoingCopyQuery = queryCtxt.Translated.LocalCopy != ""
-	queryCtxt.FinalSQL = queryCtxt.Translated.Sql()
+	queryCtxt.ongoingCopyQuery = queryCtxt.Query.LocalCopy != ""
+	queryCtxt.FinalSQL = queryCtxt.Query.Sql()
 	msg.QueryString = queryCtxt.FinalSQL
-	if config.KeepOriginal {
+	if instance.KeepOriginal {
 		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(queryCtxt.OriginalSQL, "\n", "\n-- "), "\r", "")
 	}
-	if config.Verbose&2 == 2 {
+	if instance.Verbose&2 == 2 {
 		log.Printf("INFO  [%s] %s in %d µs\n", queryCtxt.ClientInfo, msg.QueryString, time.Since(queryCtxt.Time).Microseconds())
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
-	parseMsg, _ := config.handleParse(ctx, &message.Parse{
+	parseMsg, _ := instance.handleParse(ctx, &message.Parse{
 		QueryString: msg.QueryString,
 	})
 	queryCtxt.prepared = false
@@ -152,7 +153,7 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 	return msg, nil
 }
 
-func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, finalExpectedType byte) ([]byte, error) {
+func (instance *ProxyInstance) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, finalExpectedType byte) ([]byte, error) {
 	if _, err := io.Copy(ctx.ServerConn, reader); err != nil {
 		return nil, fmt.Errorf("data write failed: %w", err)
 	}
@@ -192,14 +193,14 @@ func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, fi
 	}
 }
 
-func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) cleanupStore(ctx *proxy.Ctx) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return
 	}
 	if queryCtxt.OriginalSQL != "" && !queryCtxt.ongoingCopyQuery {
-		if config.QueryStore != nil {
-			config.QueryStore.Add(QueryRecord{
+		if instance.queryStore != nil {
+			instance.queryStore.Add(QueryRecord{
 				Time:        queryCtxt.Time,
 				Duration:    time.Since(queryCtxt.Time).Milliseconds(),
 				ClientInfo:  queryCtxt.ClientInfo,
@@ -214,103 +215,103 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 	queryCtxt.Error = ""
 }
 
-func (config *ProxyConfig) managePolyfills(ctx *proxy.Ctx) error {
-	polyfills := config.Polyfills()
+func (instance *ProxyInstance) managePolyfills(ctx *proxy.Ctx) error {
+	polyfills := instance.Polyfills()
 	if polyfills == nil {
 		return nil
 	}
 	if polyfills.SessionCreate != "" {
-		_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SessionCreate}).Reader(), 'Z')
+		_, err := instance.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SessionCreate}).Reader(), 'Z')
 		if err != nil {
 			return err
 		}
 	}
-	if config.systemPolyfilled {
+	if instance.systemPolyfilled {
 		return nil
 	}
-	config.polyfillLock.Lock()
-	defer config.polyfillLock.Unlock()
+	instance.polyfillLock.Lock()
+	defer instance.polyfillLock.Unlock()
 	if polyfills.SystemCheck == "" || polyfills.SystemCreate == "" {
-		config.systemPolyfilled = true
+		instance.systemPolyfilled = true
 		return nil
 	}
-	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCheck}).Reader(), 'Z')
+	_, err := instance.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCheck}).Reader(), 'Z')
 	if err != nil { // seems polyfill is not installed
-		_, err = config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCreate}).Reader(), 'Z')
+		_, err = instance.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCreate}).Reader(), 'Z')
 		if err != nil {
 			return err
 		}
 	}
-	config.systemPolyfilled = true
+	instance.systemPolyfilled = true
 	return nil
 }
 
-func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
-	config.cleanupStore(ctx)
+func (instance *ProxyInstance) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
+	instance.cleanupStore(ctx)
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
-	queryCtxt := config.getQueryContext(ctx)
-	if config.Verbose&1 == 1 && queryCtxt != nil {
+func (instance *ProxyInstance) handleTerminate(ctx *proxy.Ctx, msg *message.Terminate) (*message.Terminate, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if instance.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("INFO  [%s] Client sent termination\n", queryCtxt.ClientInfo)
 	}
-	config.cleanupStore(ctx)
+	instance.cleanupStore(ctx)
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.AuthenticationOk) (*message.AuthenticationOk, error) {
-	if config.Verbose&1 == 1 {
+func (instance *ProxyInstance) handleAuthenticationOk(ctx *proxy.Ctx, msg *message.AuthenticationOk) (*message.AuthenticationOk, error) {
+	if instance.Verbose&1 == 1 {
 		log.Printf("INFO  [%s] Server authentification OK (%d)\n", fmt.Sprintf("%-6d %-40s", 0, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
 			ctx.ConnInfo.ClientAddress)), msg.ID)
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleBackendKeyData(ctx *proxy.Ctx, msg *message.BackendKeyData) (*message.BackendKeyData, error) {
+func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message.BackendKeyData) (*message.BackendKeyData, error) {
 	ctx.QueryContext = &QueryContext{
 		ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
 			ctx.ConnInfo.ClientAddress)),
 	}
-	err := config.managePolyfills(ctx)
+	err := instance.managePolyfills(ctx)
 	return msg, err
 }
 
-func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
-	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" && queryCtxt.prepared {
+func (instance *ProxyInstance) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy == "$1" && queryCtxt.prepared {
 		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
-	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy == "$1" &&
+func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy == "$1" &&
 		queryCtxt.prepared && len(msg.ParameterValues) > 0 {
-		queryCtxt.Translated.LocalCopy = string(msg.ParameterValues[0].DataBytes())
+		queryCtxt.Query.LocalCopy = string(msg.ParameterValues[0].DataBytes())
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.RowDescription) (*message.RowDescription, error) {
+func (instance *ProxyInstance) handleRowDescription(ctx *proxy.Ctx, msg *message.RowDescription) (*message.RowDescription, error) {
 	for i := range msg.Fields {
-		msg.Fields[i].Name = config.RenameRowField(i, msg.Fields[i].Name)
+		msg.Fields[i].Name = instance.RenameRowField(i, msg.Fields[i].Name)
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message.CopyInResponse) (*message.CopyInResponse, error) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
 	queryCtxt.ongoingCopyQuery = false
-	if queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
-		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
+	if queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
+		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
-		f, err := os.Open(queryCtxt.Translated.LocalCopy)
+		f, err := os.Open(queryCtxt.Query.LocalCopy)
 		if err != nil {
 			return msg, err
 		}
@@ -319,8 +320,8 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 		for {
 			n, err := f.Read(buf)
 			if n > 0 {
-				if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-					log.Printf("INFO  [%s] Read %d bytes from %s\n", queryCtxt.ClientInfo, n, queryCtxt.Translated.LocalCopy)
+				if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+					log.Printf("INFO  [%s] Read %d bytes from %s\n", queryCtxt.ClientInfo, n, queryCtxt.Query.LocalCopy)
 				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
@@ -342,25 +343,25 @@ func (config *ProxyConfig) handleCopyInResponse(ctx *proxy.Ctx, msg *message.Cop
 				return nil, fmt.Errorf("Sync send failed: %w", err)
 			}
 		}
-		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
+		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
 		msg.BypassReturn = true
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.CopyOutResponse) (*message.CopyOutResponse, error) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return msg, nil
 	}
 	queryCtxt.ongoingCopyQuery = false
-	if queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
-		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
+	if queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
+		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
-		f, err := os.Create(queryCtxt.Translated.LocalCopy)
+		f, err := os.Create(queryCtxt.Query.LocalCopy)
 		if err != nil {
 			return msg, err
 		}
@@ -370,10 +371,10 @@ func (config *ProxyConfig) handleCopyOutResponse(ctx *proxy.Ctx, msg *message.Co
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
-	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
-		f, err := os.OpenFile(queryCtxt.Translated.LocalCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
+		f, err := os.OpenFile(queryCtxt.Query.LocalCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return msg, err
 		}
@@ -387,19 +388,19 @@ func (config *ProxyConfig) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData)
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
-	queryCtxt := config.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.Translated != nil && queryCtxt.Translated.LocalCopy != "" {
-		if config.Verbose&2 == 2 || config.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.Translated.LocalCopy)
+func (instance *ProxyInstance) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
+		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
 		msg.BypassReturn = true
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
-	queryCtxt := config.getQueryContext(ctx)
+func (instance *ProxyInstance) handleErrorResponse(ctx *proxy.Ctx, msg *message.ErrorResponse) (*message.ErrorResponse, error) {
+	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt != nil {
 		queryCtxt.ongoingCopyQuery = false
 		var errorMessage string
@@ -428,17 +429,17 @@ func (config *ProxyConfig) handleErrorResponse(ctx *proxy.Ctx, msg *message.Erro
 				errorCode = err.Value
 			}
 		}
-		config.cleanupStore(ctx)
-		if (config.Verbose&2 == 2 || config.Verbose&4 == 4) && len(errorMessage) > 0 {
+		instance.cleanupStore(ctx)
+		if (instance.Verbose&2 == 2 || instance.Verbose&4 == 4) && len(errorMessage) > 0 {
 			log.Printf("ERROR [%s] %s (error code: %s)\n", queryCtxt.ClientInfo, errorMessage, errorCode)
 		}
 	}
 	return msg, nil
 }
 
-func (config *ProxyConfig) NewSelfSignedCert() (tls.Certificate, error) {
+func (instance *ProxyInstance) NewSelfSignedCert() (tls.Certificate, error) {
 	var outCert tls.Certificate
-	var host = config.Host
+	var host = instance.Host
 	if len(host) == 0 {
 		host = "localhost"
 	}
@@ -489,19 +490,19 @@ func (config *ProxyConfig) NewSelfSignedCert() (tls.Certificate, error) {
 	return outCert, err
 }
 
-func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
+func (instance *ProxyInstance) NewServer() (*proxy.Server, error) {
 
 	var tlsConfig *tls.Config
-	if len(config.CertificateFile) > 0 {
+	if len(instance.CertificateFile) > 0 {
 		tlsConfig = &tls.Config{}
-		if len(config.KeyFile) > 0 {
-			cert, err := tls.LoadX509KeyPair(config.CertificateFile, config.KeyFile)
+		if len(instance.KeyFile) > 0 {
+			cert, err := tls.LoadX509KeyPair(instance.CertificateFile, instance.KeyFile)
 			if err != nil {
 				return nil, err
 			}
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		} else {
-			cert, err := config.NewSelfSignedCert()
+			cert, err := instance.NewSelfSignedCert()
 			if err != nil {
 				return nil, err
 			}
@@ -513,35 +514,35 @@ func (config *ProxyConfig) NewServer() (*proxy.Server, error) {
 	clientMessageHandlers := proxy.NewClientMessageHandlers()
 	serverMessageHandlers := proxy.NewServerMessageHandlers()
 
-	clientMessageHandlers.AddHandleQuery(config.handleQuery)
-	clientMessageHandlers.AddHandleParse(config.handleParse)
-	clientMessageHandlers.AddHandleTerminate(config.handleTerminate)
-	clientMessageHandlers.AddHandleBind(config.handleBind)
-	serverMessageHandlers.AddHandleBackendKeyData(config.handleBackendKeyData)
-	serverMessageHandlers.AddHandleParameterDescription(config.handleParameterDescription)
-	serverMessageHandlers.AddHandleRowDescription(config.handleRowDescription)
-	serverMessageHandlers.AddHandleReadyForQuery(config.handleReadyForQuery)
-	serverMessageHandlers.AddHandleAuthenticationOk(config.handleAuthenticationOk)
-	serverMessageHandlers.AddHandleErrorResponse(config.handleErrorResponse)
-	serverMessageHandlers.AddHandleCopyInResponse(config.handleCopyInResponse)
-	serverMessageHandlers.AddHandleCopyOutResponse(config.handleCopyOutResponse)
-	serverMessageHandlers.AddHandleCopyData(config.handleCopyData)
-	serverMessageHandlers.AddHandleCopyDone(config.handleCopyDone)
+	clientMessageHandlers.AddHandleQuery(instance.handleQuery)
+	clientMessageHandlers.AddHandleParse(instance.handleParse)
+	clientMessageHandlers.AddHandleTerminate(instance.handleTerminate)
+	clientMessageHandlers.AddHandleBind(instance.handleBind)
+	serverMessageHandlers.AddHandleBackendKeyData(instance.handleBackendKeyData)
+	serverMessageHandlers.AddHandleParameterDescription(instance.handleParameterDescription)
+	serverMessageHandlers.AddHandleRowDescription(instance.handleRowDescription)
+	serverMessageHandlers.AddHandleReadyForQuery(instance.handleReadyForQuery)
+	serverMessageHandlers.AddHandleAuthenticationOk(instance.handleAuthenticationOk)
+	serverMessageHandlers.AddHandleErrorResponse(instance.handleErrorResponse)
+	serverMessageHandlers.AddHandleCopyInResponse(instance.handleCopyInResponse)
+	serverMessageHandlers.AddHandleCopyOutResponse(instance.handleCopyOutResponse)
+	serverMessageHandlers.AddHandleCopyData(instance.handleCopyData)
+	serverMessageHandlers.AddHandleCopyDone(instance.handleCopyDone)
 
-	if config.polyfillLock == nil {
-		config.polyfillLock = &sync.RWMutex{}
+	if instance.polyfillLock == nil {
+		instance.polyfillLock = &sync.RWMutex{}
 	}
-	if config.SqlTranslator == nil {
-		config.SqlTranslator = IsoTranslator()
+	if instance.Translator == nil {
+		instance.Translator = sqlutils.IsoTranslator()
 	}
 	return &proxy.Server{
 		TLSConfig:                tlsConfig,
-		PGResolver:               config,
-		PGStartupMessageRewriter: config,
+		PGResolver:               instance,
+		PGStartupMessageRewriter: instance,
 		ConnInfoStore:            backend.NewInMemoryConnInfoStore(),
 		ClientMessageHandlers:    clientMessageHandlers,
 		ServerMessageHandlers:    serverMessageHandlers,
-		OnHandleConnError:        config.handleConnError,
-		ProtocolDebug:            config.Verbose&8 == 8,
+		OnHandleConnError:        instance.handleConnError,
+		ProtocolDebug:            instance.Verbose&8 == 8,
 	}, nil
 }

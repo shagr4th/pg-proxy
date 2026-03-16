@@ -1,7 +1,8 @@
-package main
+package ingres
 
 import (
 	"fmt"
+	"schenker/pg-proxy/sqlutils"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,25 +11,25 @@ import (
 )
 
 type ingresTranslator struct {
-	WithPlaceHolder        bool
-	StrictFixedCharSupport bool
+	withPlaceHolder     bool
+	withStrictFixedChar bool
 }
 
-func IngresTranslator() *ingresTranslator {
+func IngresTranslator(withStrictFixedChar bool) *ingresTranslator {
 	return &ingresTranslator{
-		WithPlaceHolder:        false,
-		StrictFixedCharSupport: false, // true = better emulation (slower?) but maybe not necessary
+		withPlaceHolder:     false,
+		withStrictFixedChar: withStrictFixedChar, // true = better emulation (slower?) but maybe not necessary
 	}
 }
 
-func (v *ingresTranslator) Polyfills() *Polyfills {
+func (v *ingresTranslator) Polyfills() *sqlutils.Polyfills {
 	textNumericOperatorTemplate := `
 CREATE OR REPLACE FUNCTION public.add_{}_text ({}, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
 CREATE OPERATOR public.+ (LEFTARG = {}, RIGHTARG = text, FUNCTION = public.add_{}_text);
 CREATE OR REPLACE FUNCTION public.add_text_{} (text, {}) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
 CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = {}, FUNCTION = public.add_text_{});`
 
-	charExtendedTemplate := `
+	strictFixedCharConcatenationTemplate := `
 CREATE FUNCTION public.ingres_plus_character(character, character) RETURNS character AS $$
 	SELECT convert_from(($1::bytea || $2::bytea), current_setting('server_encoding'))::bpchar;
 $$ LANGUAGE sql IMMUTABLE;
@@ -38,11 +39,11 @@ CREATE OPERATOR public.+ (LEFTARG = character, RIGHTARG = character, FUNCTION = 
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric")
-	if !v.StrictFixedCharSupport {
-		charExtendedTemplate = ""
+	if !v.withStrictFixedChar {
+		strictFixedCharConcatenationTemplate = ""
 	}
 
-	leftRightExtendedTemplate := `
+	strictFixedCharFunctionsTemplate := `
 CREATE FUNCTION pg_temp.ingres_left(val text, n int) RETURNS text AS $$
 	SELECT LEFT(val, n);
 $$ LANGUAGE sql IMMUTABLE;
@@ -59,14 +60,14 @@ CREATE FUNCTION pg_temp.ingres_plus(anyelement, anyelement) RETURNS text AS $$
 	SELECT ($1::bytea || $2::bytea)::text;
 $$ LANGUAGE sql IMMUTABLE;`
 
-	if !v.StrictFixedCharSupport {
-		leftRightExtendedTemplate = ""
+	if !v.withStrictFixedChar {
+		strictFixedCharFunctionsTemplate = ""
 	}
 
-	return &Polyfills{
+	return &sqlutils.Polyfills{
 		SystemCheck:   `SELECT 'a'+'b'`,
-		SystemCreate:  `CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` + charExtendedTemplate,
-		SessionCreate: leftRightExtendedTemplate,
+		SystemCreate:  `CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` + strictFixedCharConcatenationTemplate,
+		SessionCreate: strictFixedCharFunctionsTemplate,
 	}
 }
 
@@ -77,13 +78,13 @@ func (v *ingresTranslator) RenameRowField(index int, rowField string) string {
 	return rowField
 }
 
-func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*SqlQuery, error) {
+func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*sqlutils.Query, error) {
 	query = strings.TrimSpace(query)
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
 	}
 	query = strings.ReplaceAll(query, "$ingres.ii", "ii")
-	parsed, err := ParseSql(query, sqllexer.DBMSOracle) // Oracle car c'est uniquement utilisé dans sqllexer.go pour gérer les positional parameters ':x', supportés aussi sous Ingres
+	parsed, err := sqlutils.ParseSql(query, sqllexer.DBMSOracle) // Oracle car c'est uniquement utilisé dans sqllexer.go pour gérer les positional parameters ':x', supportés aussi sous Ingres
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +102,11 @@ func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*SqlQ
 	return parsed, nil
 }
 
-func (v *ingresTranslator) canInferNumericToken(token *SqlToken) bool {
+func (v *ingresTranslator) canInferNumericToken(token *sqlutils.Token) bool {
 	return token != nil && (token.Type == sqllexer.NUMBER || token.Type == sqllexer.POSITIONAL_PARAMETER)
 }
 
-func (v *ingresTranslator) forceParameterNumericCast(token *SqlToken) {
+func (v *ingresTranslator) forceParameterNumericCast(token *sqlutils.Token) {
 	if token != nil && token.Type == sqllexer.POSITIONAL_PARAMETER &&
 		(token.Next != nil && token.Next.EqualFold("*", "/", "-") && v.canInferNumericToken(token.Next.Next) ||
 			(token.Prev != nil && token.Prev.EqualFold("*", "/", "-") && v.canInferNumericToken(token.Prev.Prev))) {
@@ -113,13 +114,13 @@ func (v *ingresTranslator) forceParameterNumericCast(token *SqlToken) {
 	}
 }
 
-func (v *ingresTranslator) functionCharAsParam(token *SqlToken, argIndex int) bool {
+func (v *ingresTranslator) functionCharAsParam(token *sqlutils.Token, argIndex int) bool {
 	return argIndex == 0 && token != nil && token.EqualFold("rtrim", "ltrim",
 		"substring", "substr", "trim", "pad", "lpad", "rpad", "lshift", "rshift", "left",
 		"right", "date_format", "lowercase", "uppercase", "lower", "upper", "squeeze")
 }
 
-func (v *ingresTranslator) functionReturnsChar(token *SqlToken) bool {
+func (v *ingresTranslator) functionReturnsChar(token *sqlutils.Token) bool {
 	if token == nil {
 		return false
 	}
@@ -134,10 +135,10 @@ func (v *ingresTranslator) functionReturnsChar(token *SqlToken) bool {
 		(token.EqualFold("ifnull", "coalesce") && len(nextToken.Enclosing.Heads) == 2 && nextToken.Enclosing.Heads[1].Type == sqllexer.STRING)
 }
 
-func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, systemPolyfilled bool) (*SqlToken, error) {
-	var lastDDLToken *SqlToken = nil
-	var copyToken *SqlToken = nil
-	var copyIntoToken *SqlToken = nil
+func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *sqlutils.Token, systemPolyfilled bool) (*sqlutils.Token, error) {
+	var lastDDLToken *sqlutils.Token = nil
+	var copyToken *sqlutils.Token = nil
+	var copyIntoToken *sqlutils.Token = nil
 
 	if token == nil {
 		return token, nil
@@ -156,7 +157,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 		WITH := token.Search("WITH", nil, true)
 		if WITH != nil {
 			cutted := WITH.Cut(nil) // TODO: convertir ce qui peut l'être ?
-			if cutted != nil && slices.ContainsFunc(cutted, func(tok *SqlToken) bool {
+			if cutted != nil && slices.ContainsFunc(cutted, func(tok *sqlutils.Token) bool {
 				return tok.EqualFold("NOJOURNALING")
 			}) {
 				TABLE := token.Search("TABLE", nil, true)
@@ -197,7 +198,7 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 			SETafterFROM := FROM.Search("SET", WHERE, true) // recherche en partant du FROM
 
 			// on élimine d'abord les aliases des clauses SET (non supportés par PG)
-			var tableName *SqlToken
+			var tableName *sqlutils.Token
 			if SETafterFROM != nil {
 				tableName = FROM.Prev
 			} else {
@@ -396,11 +397,11 @@ from information_schema.columns c)`)
 				token = token.SetValue("|").Append("|")
 			}
 			continue
-		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && v.WithPlaceHolder) { // @x ou :x
+		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && v.withPlaceHolder) { // @x ou :x
 			value := token.Value[1:]
 			parameterIndex, err := strconv.Atoi(value)
 			if err != nil {
-				if v.WithPlaceHolder {
+				if v.withPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					// https://docs.actian.com/ingres/12.0/index.html#page/Upgrade/Named_Parameters_in_Parameterized_Queries_in_.NE.htm
@@ -409,7 +410,7 @@ from information_schema.columns c)`)
 				}
 			} else {
 				// un nombre, donc positional parameter
-				if !v.WithPlaceHolder {
+				if !v.withPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(parameterIndex))
 					v.forceParameterNumericCast(token)
 				} else {
@@ -421,12 +422,12 @@ from information_schema.columns c)`)
 				}
 			}
 			continue
-		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !v.WithPlaceHolder {
+		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !v.withPlaceHolder {
 			v.forceParameterNumericCast(token)
 			continue
 		} else if token.Type == sqllexer.OPERATOR && token.EqualFold("?") {
 			if token.PlaceHolderPosition > 0 {
-				if !v.WithPlaceHolder {
+				if !v.withPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(token.PlaceHolderPosition))
 				} else {
 					if parsed.PlaceholderPositions == nil {
@@ -436,7 +437,7 @@ from information_schema.columns c)`)
 				}
 			} else if token.Next != nil {
 				if token.Next.Type == sqllexer.NUMBER {
-					if !v.WithPlaceHolder {
+					if !v.withPlaceHolder {
 						token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+token.Next.Value)
 					} else {
 						parameterIndex, err := strconv.Atoi(token.Next.Value)
@@ -451,7 +452,7 @@ from information_schema.columns c)`)
 					}
 					token.Next.Cut(token.Next.Next)
 					token.Append(" ")
-				} else if v.WithPlaceHolder {
+				} else if v.withPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					return nil, fmt.Errorf("named parameter '%s' not supported in postgres", token.Next.Value)
@@ -533,7 +534,7 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("nvl") {
 			token.SetValue("coalesce")
 		} else if token.EqualFold("right", "left") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
-			if !v.StrictFixedCharSupport {
+			if !v.withStrictFixedChar {
 				// right(x, 2) => right(format('%s', x), 2)
 				enclosure.Start.Append("format", "(", "'%s'", ",")
 				beforeComma := enclosure.Heads[1].Prev.Prev
@@ -646,7 +647,7 @@ from information_schema.columns c)`)
 				hasEquals := enclosure.Heads[i].Search("=", endOfHead, true)
 				//columnName := enclosure.Heads[i].Value
 				var columnWithNull string
-				var columnTypeToken *SqlToken = nil
+				var columnTypeToken *sqlutils.Token = nil
 				var columnSize string
 				var columnDummy = false
 				if hasEquals != nil {

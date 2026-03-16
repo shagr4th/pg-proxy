@@ -1,4 +1,4 @@
-package main
+package ingres
 
 // Took from https://github.com/ildus/ingres
 

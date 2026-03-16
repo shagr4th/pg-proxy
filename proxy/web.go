@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"encoding/json"
@@ -30,12 +30,6 @@ type QueryStore struct {
 	count       int // number of valid entries (0..maxQueryBufferSize)
 	subscribers map[uint64]chan QueryRecord
 	nextSubID   uint64
-}
-
-func NewQueryStore() *QueryStore {
-	return &QueryStore{
-		subscribers: make(map[uint64]chan QueryRecord),
-	}
 }
 
 // Add writes a record into the ring buffer (overwriting the oldest when full)
@@ -105,7 +99,10 @@ func secretAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
 }
 
 // StartWebServer starts the HTTP server for the web UI in a goroutine.
-func StartWebServer(port int, store *QueryStore, secret string) {
+func (instance *ProxyInstance) StartWebServer(port int, secret string) {
+	instance.queryStore = &QueryStore{
+		subscribers: make(map[uint64]chan QueryRecord),
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", secretAuth(secret, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -123,14 +120,14 @@ func StartWebServer(port int, store *QueryStore, secret string) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		// Send existing records as backfill
-		for _, rec := range store.Recent() {
+		for _, rec := range instance.queryStore.Recent() {
 			data, _ := json.Marshal(rec)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 		}
 		flusher.Flush()
 
-		subID, ch := store.Subscribe()
-		defer store.Unsubscribe(subID)
+		subID, ch := instance.queryStore.Subscribe()
+		defer instance.queryStore.Unsubscribe(subID)
 
 		ctx := r.Context()
 		for {

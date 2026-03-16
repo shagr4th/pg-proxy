@@ -1,4 +1,4 @@
-package main
+package sqlutils
 
 import (
 	"database/sql"
@@ -10,33 +10,33 @@ import (
 	"github.com/DataDog/go-sqllexer"
 )
 
-type SqlTranslator interface {
+type Translator interface {
 	Polyfills() *Polyfills
-	Translate(query string, systemPolyfilled bool) (*SqlQuery, error)
+	Translate(query string, systemPolyfilled bool) (*Query, error)
 	RenameRowField(index int, rowField string) string
 }
 
-type SqlEnclosure struct {
-	Start *SqlToken
-	End   *SqlToken
-	Heads []*SqlToken
+type Enclosure struct {
+	Start *Token
+	End   *Token
+	Heads []*Token
 }
 
-type SqlToken struct {
-	query               *SqlQuery
+type Token struct {
+	query               *Query
 	Type                sqllexer.TokenType
 	Value               string
 	Index               int
-	Enclosure           *SqlEnclosure
-	Enclosing           *SqlEnclosure
-	Next                *SqlToken
-	Prev                *SqlToken
+	Enclosure           *Enclosure
+	Enclosing           *Enclosure
+	Next                *Token
+	Prev                *Token
 	PlaceHolderPosition int
 }
 
-type SqlQuery struct {
-	tokens               []*SqlToken
-	separators           []*SqlToken
+type Query struct {
+	tokens               []*Token
+	separators           []*Token
 	Transformed          bool
 	LocalCopy            string
 	PlaceholderPositions []int
@@ -51,7 +51,7 @@ type Polyfills struct {
 type isoTranslator struct {
 }
 
-func IsoTranslator() SqlTranslator {
+func IsoTranslator() Translator {
 	return &isoTranslator{}
 }
 
@@ -63,15 +63,15 @@ func (t *isoTranslator) RenameRowField(index int, rowField string) string {
 	return rowField
 }
 
-func (t *isoTranslator) Translate(query string, systemPolyfilled bool) (*SqlQuery, error) {
+func (t *isoTranslator) Translate(query string, systemPolyfilled bool) (*Query, error) {
 	return nil, nil
 }
 
-func ParseSql(query string, dbms sqllexer.DBMSType) (*SqlQuery, error) {
+func ParseSql(query string, dbms sqllexer.DBMSType) (*Query, error) {
 	var lexer = sqllexer.New(query, sqllexer.WithDBMS(dbms))
 
-	q := &SqlQuery{
-		tokens: make([]*SqlToken, 0),
+	q := &Query{
+		tokens: make([]*Token, 0),
 	}
 
 	for {
@@ -83,7 +83,7 @@ func ParseSql(query string, dbms sqllexer.DBMSType) (*SqlQuery, error) {
 		} else if lexerToken.Type == sqllexer.ERROR {
 			return nil, fmt.Errorf("{compat} Can't fully parse: %s (error token: %s)", query, lexerToken.Value)
 		}
-		token := &SqlToken{
+		token := &Token{
 			query: q,
 			Type:  lexerToken.Type,
 			Value: lexerToken.Value,
@@ -105,21 +105,21 @@ func ParseSql(query string, dbms sqllexer.DBMSType) (*SqlQuery, error) {
 	return q, nil
 }
 
-func (q *SqlQuery) Split() []*SqlQuery {
-	query := &SqlQuery{
-		tokens: make([]*SqlToken, 0),
+func (q *Query) Split() []*Query {
+	query := &Query{
+		tokens: make([]*Token, 0),
 	}
-	queries := []*SqlQuery{query}
+	queries := []*Query{query}
 	removal := 0
 	for _, token := range q.tokens {
 		if token.Type == sqllexer.PUNCTUATION && token.Value == ";" {
-			query = &SqlQuery{
-				tokens: make([]*SqlToken, 0),
+			query = &Query{
+				tokens: make([]*Token, 0),
 			}
 			queries = append(queries, query)
 			removal = len(queries) - 1
 		} else {
-			query.tokens = append(query.tokens, &SqlToken{
+			query.tokens = append(query.tokens, &Token{
 				query: query,
 				Type:  token.Type,
 				Value: token.Value,
@@ -138,8 +138,8 @@ func (q *SqlQuery) Split() []*SqlQuery {
 	return queries
 }
 
-func (q *SqlQuery) reindex() {
-	var enclosure *SqlEnclosure = nil
+func (q *Query) reindex() {
+	var enclosure *Enclosure = nil
 	addHead := false
 	lastValid := 0
 	for i, token := range q.tokens {
@@ -165,9 +165,9 @@ func (q *SqlQuery) reindex() {
 			addHead = false
 		}
 		if token.EqualFold("(") || token.EqualFold("CASE") {
-			enclosure = &SqlEnclosure{
+			enclosure = &Enclosure{
 				Start: token,
-				Heads: make([]*SqlToken, 0),
+				Heads: make([]*Token, 0),
 			}
 			addHead = true
 			token.Enclosing = enclosure
@@ -194,7 +194,7 @@ func (q *SqlQuery) reindex() {
 /*
 Retourne le premier token
 */
-func (q *SqlQuery) First() *SqlToken {
+func (q *Query) First() *Token {
 	if len(q.tokens) > 0 {
 		return q.tokens[0]
 	}
@@ -204,7 +204,7 @@ func (q *SqlQuery) First() *SqlToken {
 /*
 Retourne une requête SQL
 */
-func (q *SqlQuery) Sql() string {
+func (q *Query) Sql() string {
 	n := 0
 	for i, token := range q.tokens {
 		if token.Type == sqllexer.SPACE {
@@ -230,7 +230,7 @@ func (q *SqlQuery) Sql() string {
 /*
 Retourne le dernier token de la requête
 */
-func (t *SqlToken) Last() *SqlToken {
+func (t *Token) Last() *Token {
 	for _, qs := range t.query.separators {
 		if qs.Index >= t.Index {
 			return qs.Prev
@@ -242,14 +242,14 @@ func (t *SqlToken) Last() *SqlToken {
 /*
 Retourne vrai si c'est un séparateur de requête
 */
-func (t *SqlToken) IsSeparator() bool {
+func (t *Token) IsSeparator() bool {
 	return slices.Contains(t.query.separators, t)
 }
 
 /*
 Change le type du token
 */
-func (t *SqlToken) Set(typ sqllexer.TokenType, value string) *SqlToken {
+func (t *Token) Set(typ sqllexer.TokenType, value string) *Token {
 	t.Type = typ
 	t.SetValue(value)
 	return t
@@ -258,13 +258,13 @@ func (t *SqlToken) Set(typ sqllexer.TokenType, value string) *SqlToken {
 /*
 Change le contenu textuel du token
 */
-func (t *SqlToken) SetValue(value string) *SqlToken {
+func (t *Token) SetValue(value string) *Token {
 	t.Value = value
 	t.query.Transformed = true
 	return t
 }
 
-func (t *SqlToken) Search(value string, until *SqlToken, sameEnclosure bool) *SqlToken {
+func (t *Token) Search(value string, until *Token, sameEnclosure bool) *Token {
 	if until == nil && t.Enclosure != nil && sameEnclosure {
 		until = t.Enclosure.End
 	}
@@ -278,7 +278,7 @@ func (t *SqlToken) Search(value string, until *SqlToken, sameEnclosure bool) *Sq
 	return nil
 }
 
-func (t *SqlToken) EqualFold(values ...string) bool {
+func (t *Token) EqualFold(values ...string) bool {
 	for _, value := range values {
 		if len(t.Value) == len(value) && strings.EqualFold(t.Value, value) {
 			return true
@@ -287,8 +287,8 @@ func (t *SqlToken) EqualFold(values ...string) bool {
 	return false
 }
 
-func (t *SqlToken) Append(tokens ...string) *SqlToken {
-	array := make([]*SqlToken, len(tokens))
+func (t *Token) Append(tokens ...string) *Token {
+	array := make([]*Token, len(tokens))
 	for i, keyword := range tokens {
 		typ := sqllexer.IDENT
 		if keyword == " " || keyword == "\n" || keyword == "\t" {
@@ -308,7 +308,7 @@ func (t *SqlToken) Append(tokens ...string) *SqlToken {
 		} else if keyword == "ON" {
 			typ = sqllexer.KEYWORD
 		}
-		array[i] = &SqlToken{
+		array[i] = &Token{
 			query: t.query,
 			Type:  typ,
 			Value: keyword,
@@ -317,10 +317,10 @@ func (t *SqlToken) Append(tokens ...string) *SqlToken {
 	return t.Paste(array...)
 }
 
-func (t *SqlToken) PasteSubQuery(subQuery *SqlQuery) *SqlToken {
-	array := make([]*SqlToken, len(subQuery.tokens))
+func (t *Token) PasteSubQuery(subQuery *Query) *Token {
+	array := make([]*Token, len(subQuery.tokens))
 	for i := range array {
-		array[i] = &SqlToken{
+		array[i] = &Token{
 			query: t.query,
 			Type:  subQuery.tokens[i].Type,
 			Value: subQuery.tokens[i].Value,
@@ -329,7 +329,7 @@ func (t *SqlToken) PasteSubQuery(subQuery *SqlQuery) *SqlToken {
 	return t.Paste(array...)
 }
 
-func (t *SqlToken) Replace(tokens ...*SqlToken) *SqlToken {
+func (t *Token) Replace(tokens ...*Token) *Token {
 	if len(tokens) == 0 {
 		return t
 	}
@@ -339,7 +339,7 @@ func (t *SqlToken) Replace(tokens ...*SqlToken) *SqlToken {
 	return t.Paste(tokens...)
 }
 
-func (t *SqlToken) Paste(tokens ...*SqlToken) *SqlToken {
+func (t *Token) Paste(tokens ...*Token) *Token {
 	if len(tokens) == 0 {
 		return t
 	}
@@ -349,7 +349,7 @@ func (t *SqlToken) Paste(tokens ...*SqlToken) *SqlToken {
 	return t.query.tokens[t.Index+len(tokens)]
 }
 
-func (t *SqlToken) StartsWith(prefix string) bool {
+func (t *Token) StartsWith(prefix string) bool {
 	prefix = strings.ToLower(prefix)
 	return (strings.HasPrefix(strings.ToLower(t.Value), prefix)) ||
 		(t.Type == sqllexer.QUOTED_IDENT && len(t.Value) > 1 && strings.HasPrefix(strings.ToLower(t.Value[1:]), prefix))
@@ -358,7 +358,7 @@ func (t *SqlToken) StartsWith(prefix string) bool {
 /*
 Coupe jusqu'au token "until" (si nil, jusqu'à la fin) et retourne la partie coupée
 */
-func (t *SqlToken) Cut(until *SqlToken) []*SqlToken {
+func (t *Token) Cut(until *Token) []*Token {
 	to := -1
 	if until != nil {
 		to = slices.Index(t.query.tokens, until)
@@ -366,10 +366,10 @@ func (t *SqlToken) Cut(until *SqlToken) []*SqlToken {
 	if to == -1 {
 		to = t.Last().Index + 1
 	}
-	var cut []*SqlToken = nil
+	var cut []*Token = nil
 	if t.Index > -1 && to > t.Index {
 		t.query.Transformed = true
-		cut = make([]*SqlToken, to-t.Index)
+		cut = make([]*Token, to-t.Index)
 		copy(cut, t.query.tokens[t.Index:to])
 		t.query.tokens = slices.Delete(t.query.tokens, t.Index, to)
 		t.query.reindex()
@@ -377,7 +377,7 @@ func (t *SqlToken) Cut(until *SqlToken) []*SqlToken {
 	return cut
 }
 
-func (t *SqlToken) EnclosingFunction() (*SqlToken, int) {
+func (t *Token) EnclosingFunction() (*Token, int) {
 	argIndex := -1
 	if t == nil || t.Enclosure == nil {
 		return nil, argIndex
@@ -434,7 +434,7 @@ type dbExecutor interface {
 	Prepare(query string) (*sql.Stmt, error)
 }
 
-func Exec(db dbExecutor, prepare bool, query string, args ...any) (sql.Result, error) {
+func DoExec(db dbExecutor, prepare bool, query string, args ...any) (sql.Result, error) {
 	var res sql.Result
 	var err error
 	var stmt *sql.Stmt
@@ -451,7 +451,7 @@ func Exec(db dbExecutor, prepare bool, query string, args ...any) (sql.Result, e
 	return res, err
 }
 
-func Query[K comparable](db dbExecutor, query string, args ...any) ([]*K, error) {
+func DoQuery[K comparable](db dbExecutor, query string, args ...any) ([]*K, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -495,7 +495,7 @@ func AssertEquals[K comparable](t HasErrorf, expected K, got K, args ...string) 
 }
 
 func AssertSqlRowCount[K comparable](t HasErrorf, db dbExecutor, query string, expectedRowCount int, args ...any) []*K {
-	results, err := Query[K](db, query, args...)
+	results, err := DoQuery[K](db, query, args...)
 	AssertNoError(t, err, query)
 	AssertEquals(t, expectedRowCount, len(results), query)
 	return results
@@ -514,7 +514,7 @@ func AssertSqlQuery[K comparable](t HasErrorf, db dbExecutor, query string, expe
 }
 
 func AssertSqlExec(t HasErrorf, db dbExecutor, prepare bool, query string, expectedRowsAffected int64, args ...any) int64 {
-	res, err := Exec(db, prepare, query, args...)
+	res, err := DoExec(db, prepare, query, args...)
 	AssertNoError(t, err, query)
 	if query != "" && res != nil {
 		rowsAffected, err := res.RowsAffected()

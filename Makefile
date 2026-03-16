@@ -3,8 +3,7 @@ default: run
 
 test:
 	@go clean -testcache
-# -p 1
-	@go test ./... -v
+	@go test -p 1 ./... -v
 
 run:
 	@go run main.go proxy.go translator_base.go translator_ingres.go web.go
