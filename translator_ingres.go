@@ -10,17 +10,15 @@ import (
 )
 
 type ingresTranslator struct {
-	withPlaceHolder bool
+	WithPlaceHolder        bool
+	StrictFixedCharSupport bool
 }
 
-func IngresTranslator(withPlaceHolder bool) SqlTranslator {
+func IngresTranslator() *ingresTranslator {
 	return &ingresTranslator{
-		withPlaceHolder,
+		WithPlaceHolder:        false,
+		StrictFixedCharSupport: false, // true = better emulation (slower?) but maybe not necessary
 	}
-}
-
-func (t *ingresTranslator) IsCopyLocal() bool {
-	return true
 }
 
 func (v *ingresTranslator) Polyfills() *Polyfills {
@@ -30,35 +28,45 @@ CREATE OPERATOR public.+ (LEFTARG = {}, RIGHTARG = text, FUNCTION = public.add_{
 CREATE OR REPLACE FUNCTION public.add_text_{} (text, {}) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
 CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = {}, FUNCTION = public.add_text_{});`
 
+	charExtendedTemplate := `
+CREATE FUNCTION public.ingres_plus_character(character, character) RETURNS character AS $$
+	SELECT convert_from(($1::bytea || $2::bytea), current_setting('server_encoding'))::bpchar;
+$$ LANGUAGE sql IMMUTABLE;
+CREATE OPERATOR public.+ (LEFTARG = character, RIGHTARG = character, FUNCTION = public.ingres_plus_character);` +
+		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "integer") +
+		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "smallint") +
+		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
+		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
+		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric")
+	if !v.StrictFixedCharSupport {
+		charExtendedTemplate = ""
+	}
+
+	leftRightExtendedTemplate := `
+CREATE FUNCTION pg_temp.ingres_left(val text, n int) RETURNS text AS $$
+	SELECT LEFT(val, n);
+$$ LANGUAGE sql IMMUTABLE;
+CREATE FUNCTION pg_temp.ingres_left(val character, n int) RETURNS character AS $$
+	SELECT rpad(LEFT(val, n), octet_length(val))::bpchar;
+$$ LANGUAGE sql IMMUTABLE;
+CREATE FUNCTION pg_temp.ingres_right(val text, n int) RETURNS text AS $$
+	SELECT RIGHT(val, n);
+$$ LANGUAGE sql IMMUTABLE;
+CREATE FUNCTION pg_temp.ingres_right(val character, n int) RETURNS character AS $$
+	SELECT lpad(right(rpad(val, octet_length(val)), n), octet_length(val))::bpchar;
+$$ LANGUAGE sql IMMUTABLE;
+CREATE FUNCTION pg_temp.ingres_plus(anyelement, anyelement) RETURNS text AS $$
+	SELECT ($1::bytea || $2::bytea)::text;
+$$ LANGUAGE sql IMMUTABLE;`
+
+	if !v.StrictFixedCharSupport {
+		leftRightExtendedTemplate = ""
+	}
+
 	return &Polyfills{
-		SystemCheck: `SELECT 'a'+'b'`,
-		SystemCreate: `
-		CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);
-		CREATE FUNCTION public.ingres_plus_character(character, character) RETURNS character AS $$
-			SELECT convert_from(($1::bytea || $2::bytea), current_setting('server_encoding'))::bpchar;
-		$$ LANGUAGE sql IMMUTABLE;
-		CREATE OPERATOR public.+ (LEFTARG = character, RIGHTARG = character, FUNCTION = public.ingres_plus_character);` +
-			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "integer") +
-			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "smallint") +
-			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
-			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
-			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric"),
-		SessionCreate: "", /*
-			CREATE FUNCTION pg_temp.ingres_left(val text, n int) RETURNS text AS $$
-				SELECT LEFT(val, n);
-			$$ LANGUAGE sql IMMUTABLE;
-			CREATE FUNCTION pg_temp.ingres_left(val character, n int) RETURNS character AS $$
-				SELECT rpad(LEFT(val, n), octet_length(val))::bpchar;
-			$$ LANGUAGE sql IMMUTABLE;
-			CREATE FUNCTION pg_temp.ingres_right(val text, n int) RETURNS text AS $$
-				SELECT RIGHT(val, n);
-			$$ LANGUAGE sql IMMUTABLE;
-			CREATE FUNCTION pg_temp.ingres_right(val character, n int) RETURNS character AS $$
-				SELECT lpad(right(rpad(val, octet_length(val)), n), octet_length(val))::bpchar;
-			$$ LANGUAGE sql IMMUTABLE;
-			CREATE FUNCTION pg_temp.ingres_plus(anyelement, anyelement) RETURNS text AS $$
-				SELECT ($1::bytea || $2::bytea)::text;
-			$$ LANGUAGE sql IMMUTABLE;*/
+		SystemCheck:   `SELECT 'a'+'b'`,
+		SystemCreate:  `CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` + charExtendedTemplate,
+		SessionCreate: leftRightExtendedTemplate,
 	}
 }
 
@@ -388,11 +396,11 @@ from information_schema.columns c)`)
 				token = token.SetValue("|").Append("|")
 			}
 			continue
-		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && v.withPlaceHolder) { // @x ou :x
+		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && v.WithPlaceHolder) { // @x ou :x
 			value := token.Value[1:]
 			parameterIndex, err := strconv.Atoi(value)
 			if err != nil {
-				if v.withPlaceHolder {
+				if v.WithPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					// https://docs.actian.com/ingres/12.0/index.html#page/Upgrade/Named_Parameters_in_Parameterized_Queries_in_.NE.htm
@@ -401,7 +409,7 @@ from information_schema.columns c)`)
 				}
 			} else {
 				// un nombre, donc positional parameter
-				if !v.withPlaceHolder {
+				if !v.WithPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(parameterIndex))
 					v.forceParameterNumericCast(token)
 				} else {
@@ -413,12 +421,12 @@ from information_schema.columns c)`)
 				}
 			}
 			continue
-		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !v.withPlaceHolder {
+		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !v.WithPlaceHolder {
 			v.forceParameterNumericCast(token)
 			continue
 		} else if token.Type == sqllexer.OPERATOR && token.EqualFold("?") {
 			if token.PlaceHolderPosition > 0 {
-				if !v.withPlaceHolder {
+				if !v.WithPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(token.PlaceHolderPosition))
 				} else {
 					if parsed.PlaceholderPositions == nil {
@@ -428,7 +436,7 @@ from information_schema.columns c)`)
 				}
 			} else if token.Next != nil {
 				if token.Next.Type == sqllexer.NUMBER {
-					if !v.withPlaceHolder {
+					if !v.WithPlaceHolder {
 						token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+token.Next.Value)
 					} else {
 						parameterIndex, err := strconv.Atoi(token.Next.Value)
@@ -443,7 +451,7 @@ from information_schema.columns c)`)
 					}
 					token.Next.Cut(token.Next.Next)
 					token.Append(" ")
-				} else if v.withPlaceHolder {
+				} else if v.WithPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					return nil, fmt.Errorf("named parameter '%s' not supported in postgres", token.Next.Value)
@@ -525,11 +533,15 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("nvl") {
 			token.SetValue("coalesce")
 		} else if token.EqualFold("right", "left") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
-			// right(x, 2) => right(format('%s', x), 2)
-			enclosure.Start.Append("format", "(", "'%s'", ",")
-			beforeComma := enclosure.Heads[1].Prev.Prev
-			if beforeComma != nil {
-				beforeComma.Append(")")
+			if !v.StrictFixedCharSupport {
+				// right(x, 2) => right(format('%s', x), 2)
+				enclosure.Start.Append("format", "(", "'%s'", ",")
+				beforeComma := enclosure.Heads[1].Prev.Prev
+				if beforeComma != nil {
+					beforeComma.Append(")")
+				}
+			} else {
+				token.SetValue("pg_temp.ingres_" + strings.ToLower(token.Value))
 			}
 		} else if token.EqualFold("date_format") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Type == sqllexer.STRING {
 			token.SetValue("to_char")

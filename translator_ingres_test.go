@@ -58,8 +58,9 @@ func TestIngres(t *testing.T) {
 
 	cnxStr := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
 
+	translator := IngresTranslator()
 	proxyConfig := &ProxyConfig{
-		SqlTranslator:   IngresTranslator(false),
+		SqlTranslator:   translator,
 		Verbose:         0,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParametersOverride: map[string]string{
@@ -123,8 +124,10 @@ func TestIngres(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), `pg-proxy error: named parameter 'name' not supported in postgres: strconv.Atoi: parsing "name": invalid syntax`) {
 			t.Error("Unexpected nil or wrong error for SELECT 'a' + :name", err)
 		}
-		AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
-		AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
+		if translator.StrictFixedCharSupport {
+			AssertSqlQuery(t, db, "SELECT 2 + ('5' + '2')", []string{"54"})
+			AssertSqlQuery(t, db, "SELECT 3 + ('5' + '2') + 9.5", []string{"64.5"})
+		}
 
 		AssertSqlExec(t, db, true, "", 0)
 		AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
@@ -349,10 +352,15 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select char('456', 2)", []string{"45"})
 		AssertSqlQuery(t, db, "select char(456) + vchar('A') + varchar(789)", []string{"456A789"})
 		AssertSqlQuery(t, db, "select char(456, 2)", []string{"45"})
-		AssertSqlQuery(t, db, "select char('123456', 10) + 'A'", []string{"123456    A"})
-		AssertSqlQuery(t, db, "select 'A' + char('123456', 10) + 'B'", []string{"A123456    B"})
-		AssertSqlQuery(t, db, "select right(char('123456', 10), 2)", []string{"  "})
-		AssertSqlQuery(t, db, "select left(char('123456', 10), 8)", []string{"123456  "})
+		if translator.StrictFixedCharSupport {
+			AssertSqlQuery(t, db, "select char('123456', 10) + 'A'", []string{"123456    A"})
+			AssertSqlQuery(t, db, "select 'A' + char('123456', 10) + 'B'", []string{"A123456    B"})
+			AssertSqlQuery(t, db, "select right(char('123456', 10), 2)", []string{"          "})
+			AssertSqlQuery(t, db, "select left(char('123456', 10), 8)", []string{"123456    "})
+		} else {
+			AssertSqlQuery(t, db, "select right(char('123456', 10), 2)", []string{"  "})
+			AssertSqlQuery(t, db, "select left(char('123456', 10), 8)", []string{"123456  "})
+		}
 		AssertSqlQuery(t, db, "select (char('  ',8) = '        ') and (char('  ',8) = '')", []string{"true"})
 		AssertSqlQuery(t, db, "select $1 * 100", []string{"326.00"}, "0000000003.26")
 		AssertSqlQuery(t, db, "select decimal(101.10, 0, 2)+$1", []string{"104.36"}, "0000000003.26")
@@ -760,7 +768,7 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 	t.Logf("Time for %d lexers : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 
 	ss = time.Now()
-	translator := IngresTranslator(false)
+	translator := IngresTranslator()
 
 	for range numThreads * 100 {
 		translator.Translate(large, true)

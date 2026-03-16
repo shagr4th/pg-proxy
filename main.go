@@ -49,7 +49,7 @@ Commit: ` + commit)
 	flag.Parse()
 
 	if translator == "ingres" {
-		proxyConfig.SqlTranslator = IngresTranslator(false)
+		proxyConfig.SqlTranslator = IngresTranslator()
 	}
 	if startupOverride != "" {
 		err := json.Unmarshal([]byte(startupOverride), &proxyConfig.StartupParametersOverride)
