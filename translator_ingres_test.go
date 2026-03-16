@@ -59,7 +59,7 @@ func TestIngres(t *testing.T) {
 	cnxStr := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
 
 	proxyConfig := &ProxyConfig{
-		SqlTranslator:   IngresTranslator(),
+		SqlTranslator:   IngresTranslator(false),
 		Verbose:         0,
 		CertificateFile: "dummy.crt", // on utilise "require" dans cnxStr, donc on force le SSL en passant un faux certificat, mais sans clé privée (il fera un self signed)
 		StartupParametersOverride: map[string]string{
@@ -106,11 +106,6 @@ func TestIngres(t *testing.T) {
 	}
 	connectionsTest("raw", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", TestUsername, TestPassword, TestDatabasePort, TestDatabaseName), false)
 	connectionsTest("proxy", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=disable", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort), false)
-
-	configuration := TranslationConfiguration{
-		TargetPolyfilled: true,
-		WithPlaceHolder:  false,
-	}
 
 	for _, driver := range []string{"postgres", "pgx"} { // test 2 drivers différents
 		t.Logf("Testing driver %s", driver)
@@ -239,7 +234,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "select t.HEUREMAJ + COLUMN1  from TABLE1 t", []string{"100100dummy"})
 		AssertSqlQuery(t, db, "select COLUMN1 + HEUREMAJ from TABLE1 t", []string{"dummy100100"})
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
-		parsed, err := proxyConfig.Translate(testQuery, configuration)
+		parsed, err := proxyConfig.Translate(testQuery, true)
 		AssertNoError(t, err)
 		AssertEquals(t, false, parsed.Transformed, testQuery)
 
@@ -251,7 +246,7 @@ func TestIngres(t *testing.T) {
 		AssertSqlQuery(t, db, "SELECT COLUMN1 FROM TABLE1 LIMIT 1", []string{"XC"})
 
 		testQuery = "EXECUTE PROCEDURE TOTO (ARG = 't')"
-		parsed, err = proxyConfig.Translate(testQuery, configuration)
+		parsed, err = proxyConfig.Translate(testQuery, true)
 		AssertNoError(t, err)
 		AssertEquals(t, "CALL TOTO (ARG => 't')", parsed.Sql(), testQuery)
 
@@ -287,7 +282,7 @@ func TestIngres(t *testing.T) {
 		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
-		res, err := proxyConfig.Translate(testQuery, configuration)
+		res, err := proxyConfig.Translate(testQuery, true)
 		AssertNoError(t, err)
 		AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
@@ -741,13 +736,10 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 	t.Logf("Time for %d lexers : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 
 	ss = time.Now()
-	translator := IngresTranslator()
+	translator := IngresTranslator(false)
 
 	for range numThreads * 100 {
-		translator.Translate(large, TranslationConfiguration{
-			TargetPolyfilled: true,
-			WithPlaceHolder:  false,
-		})
+		translator.Translate(large, false)
 	}
 	t.Logf("Time for %d rewrites : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 }

@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"schenker/pg-proxy/pgbroker/backend"
-	"schenker/pg-proxy/pgbroker/message"
 )
 
 type AuthPhase int
@@ -19,12 +18,11 @@ const (
 )
 
 type Ctx struct {
-	ClientConn     net.Conn
-	ServerConn     net.Conn
-	ConnInfo       backend.ConnInfo
-	RowDescription *message.RowDescription
-	AuthPhase      AuthPhase
-	Context        context.Context
-	Cancel         context.CancelFunc
-	QueryContext   any
+	ClientConn   net.Conn
+	ServerConn   net.Conn
+	ConnInfo     backend.ConnInfo
+	AuthPhase    AuthPhase
+	Context      context.Context
+	Cancel       context.CancelFunc
+	QueryContext any
 }

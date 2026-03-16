@@ -35,11 +35,12 @@ type ProxyConfig struct {
 	KeyFile                   string
 	Verbose                   int
 	KeepOriginal              bool
-	TranslateConfiguration    TranslationConfiguration
 	StartupParametersOverride map[string]string
 	QueryStore                *QueryStore
 	SqlTranslator
-	polyfillLock *sync.RWMutex
+
+	systemPolyfilled bool
+	polyfillLock     *sync.RWMutex
 }
 
 var _ backend.PGStartupMessageRewriter = (*ProxyConfig)(nil)
@@ -112,7 +113,7 @@ func (config *ProxyConfig) handleParse(ctx *proxy.Ctx, msg *message.Parse) (pars
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
 	var err error
-	queryCtxt.Translated, err = config.Translate(msg.QueryString, config.TranslateConfiguration)
+	queryCtxt.Translated, err = config.Translate(msg.QueryString, config.systemPolyfilled)
 	if err != nil {
 		queryCtxt.Error = err.Error()
 	}
@@ -153,7 +154,7 @@ func (config *ProxyConfig) handleQuery(ctx *proxy.Ctx, msg *message.Query) (quer
 
 func (config *ProxyConfig) sendDataToServer(ctx *proxy.Ctx, reader io.Reader, finalExpectedType byte) ([]byte, error) {
 	if _, err := io.Copy(ctx.ServerConn, reader); err != nil {
-		return nil, fmt.Errorf("Polyfill write failed: %w", err)
+		return nil, fmt.Errorf("data write failed: %w", err)
 	}
 
 	var result error
@@ -213,36 +214,39 @@ func (config *ProxyConfig) cleanupStore(ctx *proxy.Ctx) {
 	queryCtxt.Error = ""
 }
 
-func (config *ProxyConfig) managePolyfill(ctx *proxy.Ctx) {
-	if config.TranslateConfiguration.TargetPolyfilled {
-		return
+func (config *ProxyConfig) managePolyfills(ctx *proxy.Ctx) error {
+	polyfills := config.Polyfills()
+	if polyfills == nil {
+		return nil
+	}
+	if polyfills.SessionCreate != "" {
+		_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SessionCreate}).Reader(), 'Z')
+		if err != nil {
+			return err
+		}
+	}
+	if config.systemPolyfilled {
+		return nil
 	}
 	config.polyfillLock.Lock()
 	defer config.polyfillLock.Unlock()
-	start := time.Now()
-	checkPolyfill, createPolyfill := config.Polyfill()
-	if createPolyfill == "" {
-		config.TranslateConfiguration.TargetPolyfilled = true
-		return
+	if polyfills.SystemCheck == "" || polyfills.SystemCreate == "" {
+		config.systemPolyfilled = true
+		return nil
 	}
-	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: checkPolyfill}).Reader(), 'Z')
+	_, err := config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCheck}).Reader(), 'Z')
 	if err != nil { // seems polyfill is not installed
-		_, err = config.sendDataToServer(ctx, (&message.Query{QueryString: createPolyfill}).Reader(), 'Z')
-		queryCtxt := config.getQueryContext(ctx)
-		if config.Verbose&1 == 1 && queryCtxt != nil {
-			if err == nil {
-				log.Printf("INFO  [%s] Executed polyfill in %d µs\n", queryCtxt.ClientInfo, time.Since(start).Microseconds())
-			} else {
-				log.Printf("ERROR [%s] Polyfill error: %s\n", queryCtxt.ClientInfo, err.Error())
-			}
+		_, err = config.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCreate}).Reader(), 'Z')
+		if err != nil {
+			return err
 		}
 	}
-	config.TranslateConfiguration.TargetPolyfilled = true
+	config.systemPolyfilled = true
+	return nil
 }
 
 func (config *ProxyConfig) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
 	config.cleanupStore(ctx)
-	config.managePolyfill(ctx)
 	return msg, nil
 }
 
@@ -268,7 +272,8 @@ func (config *ProxyConfig) handleBackendKeyData(ctx *proxy.Ctx, msg *message.Bac
 		ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
 			ctx.ConnInfo.ClientAddress)),
 	}
-	return msg, nil
+	err := config.managePolyfills(ctx)
+	return msg, err
 }
 
 func (config *ProxyConfig) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
@@ -290,9 +295,8 @@ func (config *ProxyConfig) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*messa
 
 func (config *ProxyConfig) handleRowDescription(ctx *proxy.Ctx, msg *message.RowDescription) (*message.RowDescription, error) {
 	for i := range msg.Fields {
-		msg.Fields[i].Name = config.RenameColumn(i, msg.Fields[i].Name)
+		msg.Fields[i].Name = config.RenameRowField(i, msg.Fields[i].Name)
 	}
-	ctx.RowDescription = msg
 	return msg, nil
 }
 

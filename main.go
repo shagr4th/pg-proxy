@@ -23,14 +23,10 @@ func main() {
 Commit: ` + commit)
 
 	proxyConfig := ProxyConfig{
-		Host:    "",
-		Port:    5432,
-		Remote:  "",
-		Verbose: 0,
-		TranslateConfiguration: TranslationConfiguration{
-			TargetPolyfilled: false,
-			WithPlaceHolder:  false,
-		},
+		Host:            "",
+		Port:            5432,
+		Remote:          "",
+		Verbose:         0,
 		CertificateFile: "",
 		KeyFile:         "",
 	}
@@ -42,7 +38,6 @@ Commit: ` + commit)
 	flag.StringVar(&proxyConfig.Host, "host", "", "Listener host (default all local interfaces)")
 	flag.IntVar(&proxyConfig.Port, "port", 5432, "Listener port")
 	flag.IntVar(&proxyConfig.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connections, 2 = translated queries, 4 = all queries, 8 = protocol debug (default 0)")
-	flag.BoolVar(&proxyConfig.TranslateConfiguration.TargetPolyfilled, "polyfill", true, "Polyfills already applied by a system account")
 	flag.BoolVar(&proxyConfig.KeepOriginal, "keeporiginal", true, "Keep the original query at the end in a multiline SQL comment")
 	flag.StringVar(&proxyConfig.Remote, "remote", "", "Proxy remote address (default none)")
 	flag.StringVar(&proxyConfig.CertificateFile, "certificate", "", "SSL certificate file *.crt (default none)")
@@ -54,7 +49,7 @@ Commit: ` + commit)
 	flag.Parse()
 
 	if translator == "ingres" {
-		proxyConfig.SqlTranslator = IngresTranslator()
+		proxyConfig.SqlTranslator = IngresTranslator(false)
 	}
 	if startupOverride != "" {
 		err := json.Unmarshal([]byte(startupOverride), &proxyConfig.StartupParametersOverride)

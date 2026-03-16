@@ -10,63 +10,61 @@ import (
 )
 
 type ingresTranslator struct {
+	withPlaceHolder bool
 }
 
-func IngresTranslator() SqlTranslator {
-	return &ingresTranslator{}
+func IngresTranslator(withPlaceHolder bool) SqlTranslator {
+	return &ingresTranslator{
+		withPlaceHolder,
+	}
 }
 
 func (t *ingresTranslator) IsCopyLocal() bool {
 	return true
 }
 
-func (v *ingresTranslator) Polyfill() (string, string) {
-	return `SELECT 'a'+'b' /*NOTRANSLATION*/`, `/*NOTRANSLATION*/
--- OPERATEURS GERANT LE SYMBOLE '+' AVEC DES CHAINES DE CARACTERES
+func (v *ingresTranslator) Polyfills() *Polyfills {
+	textNumericOperatorTemplate := `
+CREATE OR REPLACE FUNCTION public.add_{}_text ({}, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
+CREATE OPERATOR public.+ (LEFTARG = {}, RIGHTARG = text, FUNCTION = public.add_{}_text);
+CREATE OR REPLACE FUNCTION public.add_text_{} (text, {}) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
+CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = {}, FUNCTION = public.add_text_{});`
 
--- avec un TEXT
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);
-
--- avec un INTEGER
-CREATE OR REPLACE FUNCTION public.add_integer_text (integer, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
-CREATE OPERATOR public.+ (LEFTARG = integer, RIGHTARG = text, FUNCTION = public.add_integer_text);
-CREATE OR REPLACE FUNCTION public.add_text_integer (text, integer) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = integer, FUNCTION = public.add_text_integer);
-
--- avec un SMALLINT
-CREATE OR REPLACE FUNCTION public.add_smallint_text (smallint, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
-CREATE OPERATOR public.+ (LEFTARG = smallint, RIGHTARG = text, FUNCTION = public.add_smallint_text);
-CREATE OR REPLACE FUNCTION public.add_text_smallint (text, smallint) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = smallint, FUNCTION = public.add_text_smallint);
-
--- avec un BIGINT
-CREATE OR REPLACE FUNCTION public.add_bigint_text (bigint, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
-CREATE OPERATOR public.+ (LEFTARG = bigint, RIGHTARG = text, FUNCTION = public.add_bigint_text);
-CREATE OR REPLACE FUNCTION public.add_text_bigint (text, bigint) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = bigint, FUNCTION = public.add_text_bigint);
-
--- avec un REAL
-CREATE OR REPLACE FUNCTION public.add_real_text (real, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
-CREATE OPERATOR public.+ (LEFTARG = real, RIGHTARG = text, FUNCTION = public.add_real_text);
-CREATE OR REPLACE FUNCTION public.add_text_real (text, real) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = real, FUNCTION = public.add_text_real);
-
--- avec un NUMERIC
-CREATE OR REPLACE FUNCTION public.add_numeric_text (numeric, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
-CREATE OPERATOR public.+ (LEFTARG = numeric, RIGHTARG = text, FUNCTION = public.add_numeric_text);
-CREATE OR REPLACE FUNCTION public.add_text_numeric (text, numeric) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1::numeric + $2;
-CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = numeric, FUNCTION = public.add_text_numeric);
-`
-}
-
-func (v *ingresTranslator) RenameColumn(index int, column string) string {
-	if column == "?column?" || column == "substring" || column == "trunc" || column == "bpchar" || column == "date" || column == "to_char" || column == "trim" {
-		column = fmt.Sprintf("col%d", index+1)
+	return &Polyfills{
+		SystemCheck: `SELECT 'a'+'b'`,
+		SystemCreate: `
+		CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` +
+			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "integer") +
+			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "smallint") +
+			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
+			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
+			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric"),
+		SessionCreate: `
+		CREATE FUNCTION pg_temp.ingres_left(val anyelement, n int) RETURNS text AS $$
+			SELECT CASE
+				WHEN pg_typeof(val)::text LIKE 'character%'
+		        THEN rpad(LEFT(val, n), octet_length(val))
+		        ELSE LEFT(val, n)
+			END;
+		$$ LANGUAGE sql IMMUTABLE;
+		CREATE FUNCTION pg_temp.ingres_right(val anyelement, n int) RETURNS text AS $$
+			SELECT CASE
+				WHEN pg_typeof(val)::text LIKE 'character%'
+		        THEN lpad(RIGHT(val, n), octet_length(val))
+		        ELSE RIGHT(val, n)
+			END;
+		$$ LANGUAGE sql IMMUTABLE;`,
 	}
-	return column
 }
 
-func (v *ingresTranslator) Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error) {
+func (v *ingresTranslator) RenameRowField(index int, rowField string) string {
+	if rowField == "?column?" || rowField == "substring" || rowField == "trunc" || rowField == "bpchar" || rowField == "date" || rowField == "to_char" || rowField == "trim" {
+		rowField = fmt.Sprintf("col%d", index+1)
+	}
+	return rowField
+}
+
+func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*SqlQuery, error) {
 	query = strings.TrimSpace(query)
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
@@ -79,7 +77,7 @@ func (v *ingresTranslator) Translate(query string, configuration TranslationConf
 
 	token := parsed.First()
 	for {
-		token, err = v.singleQueryTranslate(parsed, token, configuration)
+		token, err = v.singleQueryTranslate(parsed, token, systemPolyfilled)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +121,7 @@ func (v *ingresTranslator) functionReturnsChar(token *SqlToken) bool {
 		(token.EqualFold("ifnull", "coalesce") && len(nextToken.Enclosing.Heads) == 2 && nextToken.Enclosing.Heads[1].Type == sqllexer.STRING)
 }
 
-func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, configuration TranslationConfiguration) (*SqlToken, error) {
+func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToken, systemPolyfilled bool) (*SqlToken, error) {
 	var lastDDLToken *SqlToken = nil
 	var copyToken *SqlToken = nil
 	var copyIntoToken *SqlToken = nil
@@ -193,14 +191,13 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *SqlQuery, token *SqlToke
 				tableName = SET.Prev
 			}
 			if tableName != nil {
-				alias := strings.ToLower(tableName.Value) + "."
 				current := SET.Next
 				for {
 					if current == nil || current == WHERE || current == FROM {
 						break
 					}
-					if current.StartsWith(alias) {
-						current.SetValue(current.Value[len(alias):])
+					if current.StartsWith(tableName.Value + ".") {
+						current.SetValue(current.Value[len(tableName.Value)+1:])
 					}
 					current = current.Next
 				}
@@ -350,7 +347,7 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("sysdate") {
 			token.SetValue("current_timestamp")
 			continue
-		} else if token.EqualFold("+") && !configuration.TargetPolyfilled {
+		} else if token.EqualFold("+") && !systemPolyfilled {
 			// Sans opérateur custom (dispo dans le polyfill), PG ne supporte pas la concaténation avec des +, on tente de transformer en || quand on est sûr de maniper des string
 			leftToken := token.Prev
 			rightToken := token.Next
@@ -386,11 +383,11 @@ from information_schema.columns c)`)
 				token = token.SetValue("|").Append("|")
 			}
 			continue
-		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && configuration.WithPlaceHolder) { // @x ou :x
+		} else if token.Type == sqllexer.BIND_PARAMETER || (token.Type == sqllexer.POSITIONAL_PARAMETER && v.withPlaceHolder) { // @x ou :x
 			value := token.Value[1:]
 			parameterIndex, err := strconv.Atoi(value)
 			if err != nil {
-				if configuration.WithPlaceHolder {
+				if v.withPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					// https://docs.actian.com/ingres/12.0/index.html#page/Upgrade/Named_Parameters_in_Parameterized_Queries_in_.NE.htm
@@ -399,7 +396,7 @@ from information_schema.columns c)`)
 				}
 			} else {
 				// un nombre, donc positional parameter
-				if !configuration.WithPlaceHolder {
+				if !v.withPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(parameterIndex))
 					v.forceParameterNumericCast(token)
 				} else {
@@ -411,12 +408,12 @@ from information_schema.columns c)`)
 				}
 			}
 			continue
-		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !configuration.WithPlaceHolder {
+		} else if token.Type == sqllexer.POSITIONAL_PARAMETER && !v.withPlaceHolder {
 			v.forceParameterNumericCast(token)
 			continue
 		} else if token.Type == sqllexer.OPERATOR && token.EqualFold("?") {
 			if token.PlaceHolderPosition > 0 {
-				if !configuration.WithPlaceHolder {
+				if !v.withPlaceHolder {
 					token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+strconv.Itoa(token.PlaceHolderPosition))
 				} else {
 					if parsed.PlaceholderPositions == nil {
@@ -426,7 +423,7 @@ from information_schema.columns c)`)
 				}
 			} else if token.Next != nil {
 				if token.Next.Type == sqllexer.NUMBER {
-					if !configuration.WithPlaceHolder {
+					if !v.withPlaceHolder {
 						token.Set(sqllexer.POSITIONAL_PARAMETER, "$"+token.Next.Value)
 					} else {
 						parameterIndex, err := strconv.Atoi(token.Next.Value)
@@ -441,7 +438,7 @@ from information_schema.columns c)`)
 					}
 					token.Next.Cut(token.Next.Next)
 					token.Append(" ")
-				} else if configuration.WithPlaceHolder {
+				} else if v.withPlaceHolder {
 					token.Set(sqllexer.BIND_PARAMETER, token.Value)
 				} else {
 					return nil, fmt.Errorf("named parameter '%s' not supported in postgres", token.Next.Value)

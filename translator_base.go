@@ -11,9 +11,9 @@ import (
 )
 
 type SqlTranslator interface {
-	Polyfill() (string, string)
-	Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error)
-	RenameColumn(index int, column string) string
+	Polyfills() *Polyfills
+	Translate(query string, systemPolyfilled bool) (*SqlQuery, error)
+	RenameRowField(index int, rowField string) string
 }
 
 type SqlEnclosure struct {
@@ -42,9 +42,10 @@ type SqlQuery struct {
 	PlaceholderPositions []int
 }
 
-type TranslationConfiguration struct {
-	TargetPolyfilled bool
-	WithPlaceHolder  bool
+type Polyfills struct {
+	SystemCheck   string
+	SystemCreate  string
+	SessionCreate string
 }
 
 type isoTranslator struct {
@@ -54,19 +55,15 @@ func IsoTranslator() SqlTranslator {
 	return &isoTranslator{}
 }
 
-func (t *isoTranslator) Polyfill() (string, string) {
-	return "", ""
+func (t *isoTranslator) Polyfills() *Polyfills {
+	return nil
 }
 
-func (t *isoTranslator) IsCopyLocal() bool {
-	return false
+func (t *isoTranslator) RenameRowField(index int, rowField string) string {
+	return rowField
 }
 
-func (t *isoTranslator) RenameColumn(index int, column string) string {
-	return column
-}
-
-func (t *isoTranslator) Translate(query string, configuration TranslationConfiguration) (*SqlQuery, error) {
+func (t *isoTranslator) Translate(query string, systemPolyfilled bool) (*SqlQuery, error) {
 	return nil, nil
 }
 
@@ -353,6 +350,7 @@ func (t *SqlToken) Paste(tokens ...*SqlToken) *SqlToken {
 }
 
 func (t *SqlToken) StartsWith(prefix string) bool {
+	prefix = strings.ToLower(prefix)
 	return (strings.HasPrefix(strings.ToLower(t.Value), prefix)) ||
 		(t.Type == sqllexer.QUOTED_IDENT && len(t.Value) > 1 && strings.HasPrefix(strings.ToLower(t.Value[1:]), prefix))
 }
