@@ -33,27 +33,32 @@ CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = {}, FUNCTION = public.add_t
 	return &Polyfills{
 		SystemCheck: `SELECT 'a'+'b'`,
 		SystemCreate: `
-		CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` +
+		CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);
+		CREATE FUNCTION public.ingres_plus_character(character, character) RETURNS character AS $$
+			SELECT convert_from(($1::bytea || $2::bytea), current_setting('server_encoding'))::bpchar;
+		$$ LANGUAGE sql IMMUTABLE;
+		CREATE OPERATOR public.+ (LEFTARG = character, RIGHTARG = character, FUNCTION = public.ingres_plus_character);` +
 			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "integer") +
 			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "smallint") +
 			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
 			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
 			strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric"),
-		SessionCreate: `
-		CREATE FUNCTION pg_temp.ingres_left(val anyelement, n int) RETURNS text AS $$
-			SELECT CASE
-				WHEN pg_typeof(val)::text LIKE 'character%'
-		        THEN rpad(LEFT(val, n), octet_length(val))
-		        ELSE LEFT(val, n)
-			END;
-		$$ LANGUAGE sql IMMUTABLE;
-		CREATE FUNCTION pg_temp.ingres_right(val anyelement, n int) RETURNS text AS $$
-			SELECT CASE
-				WHEN pg_typeof(val)::text LIKE 'character%'
-		        THEN lpad(RIGHT(val, n), octet_length(val))
-		        ELSE RIGHT(val, n)
-			END;
-		$$ LANGUAGE sql IMMUTABLE;`,
+		SessionCreate: "", /*
+			CREATE FUNCTION pg_temp.ingres_left(val text, n int) RETURNS text AS $$
+				SELECT LEFT(val, n);
+			$$ LANGUAGE sql IMMUTABLE;
+			CREATE FUNCTION pg_temp.ingres_left(val character, n int) RETURNS character AS $$
+				SELECT rpad(LEFT(val, n), octet_length(val))::bpchar;
+			$$ LANGUAGE sql IMMUTABLE;
+			CREATE FUNCTION pg_temp.ingres_right(val text, n int) RETURNS text AS $$
+				SELECT RIGHT(val, n);
+			$$ LANGUAGE sql IMMUTABLE;
+			CREATE FUNCTION pg_temp.ingres_right(val character, n int) RETURNS character AS $$
+				SELECT lpad(right(rpad(val, octet_length(val)), n), octet_length(val))::bpchar;
+			$$ LANGUAGE sql IMMUTABLE;
+			CREATE FUNCTION pg_temp.ingres_plus(anyelement, anyelement) RETURNS text AS $$
+				SELECT ($1::bytea || $2::bytea)::text;
+			$$ LANGUAGE sql IMMUTABLE;*/
 	}
 }
 

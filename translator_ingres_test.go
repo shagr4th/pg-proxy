@@ -164,12 +164,14 @@ func TestIngres(t *testing.T) {
 		rows, err := db.Query(testQuery)
 		AssertNoError(t, err)
 		defer rows.Close()
-		columns, err := rows.Columns()
-		AssertNoError(t, err)
-		AssertEquals(t, "column1", columns[0], testQuery)
-		AssertEquals(t, "col2", columns[1], testQuery)
-		AssertEquals(t, "overr1", columns[2], testQuery)
-		AssertEquals(t, "col4", columns[3], testQuery)
+		if rows != nil {
+			columns, err := rows.Columns()
+			AssertNoError(t, err)
+			AssertEquals(t, "column1", columns[0], testQuery)
+			AssertEquals(t, "col2", columns[1], testQuery)
+			AssertEquals(t, "overr1", columns[2], testQuery)
+			AssertEquals(t, "col4", columns[3], testQuery)
+		}
 
 		//AssertSqlQuery(t, db, "select no_demande = 0", []string{"0"})
 		//AssertSqlQuery(t, db, "select no_demande = 0 FROM TABLE1 where colUMN1 = 'dummy'", []string{"0"})
@@ -255,31 +257,43 @@ func TestIngres(t *testing.T) {
 		testQuery = "select date('today')" // pareil que current_date
 		timeResults := AssertSqlRowCount[time.Time](t, db, testQuery, 1)
 		timeResults2 := AssertSqlRowCount[time.Time](t, db, "select current_date", 1)
-		AssertEquals(t, (*timeResults2[0]).Unix(), (*timeResults[0]).Unix(), testQuery)
+		if timeResults != nil && timeResults2 != nil {
+			AssertEquals(t, (*timeResults2[0]).Unix(), (*timeResults[0]).Unix(), testQuery)
+		}
 		AssertSqlQuery(t, db, "select char(date('today'))", []string{now.Format("2006-01-02")})
 		AssertSqlQuery(t, db, "select date_part('minutes','now')", []string{now.Format("4")})
 		AssertSqlQuery(t, db, "select date_part('minutes','today')", []string{"0"})
 
 		testQuery = "select date('2012-12-01 16:55:15')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, 16, timeResults[0].Hour(), testQuery)
-		AssertEquals(t, 55, timeResults[0].Minute(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, 16, timeResults[0].Hour(), testQuery)
+			AssertEquals(t, 55, timeResults[0].Minute(), testQuery)
+		}
 		testQuery = "select date_part('minutes', DATE('23-Oct-1998 12:33'))"
 		intResults := AssertSqlRowCount[int](t, db, testQuery, 1)
-		AssertEquals(t, 33, *intResults[0], testQuery)
+		if intResults != nil {
+			AssertEquals(t, 33, *intResults[0], testQuery)
+		}
 
 		testQuery = "select date('today') - 1"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, now.AddDate(0, 0, -1).Month(), timeResults[0].Month(), testQuery)
-		AssertEquals(t, now.AddDate(0, 0, -1).Day(), timeResults[0].Day(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, now.AddDate(0, 0, -1).Month(), timeResults[0].Month(), testQuery)
+			AssertEquals(t, now.AddDate(0, 0, -1).Day(), timeResults[0].Day(), testQuery)
+		}
 		testQuery = "SELECT TO_DATE('2012-12-01', 'YYYY-MM-DD')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
-		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+			AssertEquals(t, 1, timeResults[0].Day(), testQuery)
+		}
 		testQuery = "SELECT TO_DATE('2012-Dec', 'YYYY-MON')"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
-		AssertEquals(t, 1, timeResults[0].Day(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+			AssertEquals(t, 1, timeResults[0].Day(), testQuery)
+		}
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
 		res, err := proxyConfig.Translate(testQuery, true)
@@ -296,7 +310,9 @@ func TestIngres(t *testing.T) {
 		AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (ID_COTATION, DATE_MAJ) VALUES (5.6, date('now'))", 1)
 		testQuery = "select DATE_MAJ FROM session.sesstab1701270873090"
 		timeResults = AssertSqlRowCount[time.Time](t, db, testQuery, 1)
-		_ = math.Abs(float64(timeResults[0].Second()) - float64(time.Now().Second()))
+		if timeResults != nil {
+			math.Abs(float64(timeResults[0].Second()) - float64(time.Now().Second()))
+		}
 
 		AssertSqlExec(t, db, true, "update test_table4 h set h.etat = 'E' from session.test_table6 where h.societe = session.test_table6.societe", 0)
 		AssertSqlQuery(t, db, "select date_part('day', date(' 2023-01-25'))", []int64{25})
@@ -319,16 +335,22 @@ func TestIngres(t *testing.T) {
 		AssertNoError(t, err)
 
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select Ifnull(null, date('05/25/2022'))", 1)
-		AssertEquals(t, tm.Unix(), (*timeResults[0]).Unix(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, tm.Unix(), (*timeResults[0]).Unix(), testQuery)
+		}
 		now = time.Now()
-		timeResults = AssertSqlRowCount[time.Time](t, db, "select sysdate", 1)
-		AssertEquals(t, now.Unix(), (*timeResults[0]).Unix(), testQuery)
+		if timeResults != nil {
+			timeResults = AssertSqlRowCount[time.Time](t, db, "select sysdate", 1)
+			AssertEquals(t, now.Unix(), (*timeResults[0]).Unix(), testQuery)
+		}
 		AssertSqlQuery(t, db, "SELECT date_part('year', SYSDATE) + date_part('month', SYSDATE) + date_part('day', SYSDATE)", []int{now.Year() + int(now.Month()) + now.Day()})
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('SESSION_ID')", 1)
 		AssertSqlRowCount[string](t, db, "select dbmsinfo('DUMMY')", 1)
 		AssertSqlQuery(t, db, "select char('456', 2)", []string{"45"})
 		AssertSqlQuery(t, db, "select char(456) + vchar('A') + varchar(789)", []string{"456A789"})
 		AssertSqlQuery(t, db, "select char(456, 2)", []string{"45"})
+		AssertSqlQuery(t, db, "select char('123456', 10) + 'A'", []string{"123456    A"})
+		AssertSqlQuery(t, db, "select 'A' + char('123456', 10) + 'B'", []string{"A123456    B"})
 		AssertSqlQuery(t, db, "select right(char('123456', 10), 2)", []string{"  "})
 		AssertSqlQuery(t, db, "select left(char('123456', 10), 8)", []string{"123456  "})
 		AssertSqlQuery(t, db, "select (char('  ',8) = '        ') and (char('  ',8) = '')", []string{"true"})
@@ -338,7 +360,9 @@ func TestIngres(t *testing.T) {
 
 		now = time.Now()
 		timeResults = AssertSqlRowCount[time.Time](t, db, "select TIMESTAMPADD(HOUR, 1, SYSDATE)", 1)
-		AssertEquals(t, now.Add(time.Hour).Unix(), (*timeResults[0]).Unix(), testQuery)
+		if timeResults != nil {
+			AssertEquals(t, now.Add(time.Hour).Unix(), (*timeResults[0]).Unix(), testQuery)
+		}
 
 		currentHour, err := strconv.Atoi(now.Format("15"))
 		AssertNoError(t, err)
@@ -739,7 +763,7 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 	translator := IngresTranslator(false)
 
 	for range numThreads * 100 {
-		translator.Translate(large, false)
+		translator.Translate(large, true)
 	}
 	t.Logf("Time for %d rewrites : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 }
