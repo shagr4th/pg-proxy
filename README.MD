@@ -32,7 +32,7 @@ Usage of ./pg-proxy:
 
 ## PGBROKER
 
-pgbroker is a copy of the [original project](https://github.com/rueian/pgbroker), with two small changes:
+the pgbroker folder is a copy of the [original project](https://github.com/rueian/pgbroker), with two small changes:
 
-* Messages of the types `copyin`, `copyout`, `copydata`, `copydone`, coming from the server, can be skipped, in order for a custom copy protocol management (so we cas make it local to the application, and not to the postgres server)
+* Messages of the types `copyin`, `copyout`, `copydata`, `copydone`, coming from the server, can be skipped, so ce wan implement a different copy protocol management (so we can make the copy files local to the application server, and not to the postgres server)
 * a new variable `QueryContext` has been added to the original connection context

@@ -39,9 +39,8 @@ type ProxyInstance struct {
 	StartupParametersOverride map[string]string
 	sqlutils.Translator
 
-	queryStore       *QueryStore
-	systemPolyfilled bool
-	polyfillLock     *sync.RWMutex
+	queryStore   *QueryStore
+	polyfillLock *sync.RWMutex
 }
 
 var _ backend.PGStartupMessageRewriter = (*ProxyInstance)(nil)
@@ -114,7 +113,7 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
 	var err error
-	queryCtxt.Query, err = instance.Translate(msg.QueryString, instance.systemPolyfilled)
+	queryCtxt.Query, err = instance.Translate(msg.QueryString)
 	if err != nil {
 		queryCtxt.Error = err.Error()
 	}
@@ -226,13 +225,13 @@ func (instance *ProxyInstance) managePolyfills(ctx *proxy.Ctx) error {
 			return err
 		}
 	}
-	if instance.systemPolyfilled {
+	if polyfills.Polyfilled {
 		return nil
 	}
 	instance.polyfillLock.Lock()
 	defer instance.polyfillLock.Unlock()
 	if polyfills.SystemCheck == "" || polyfills.SystemCreate == "" {
-		instance.systemPolyfilled = true
+		polyfills.Polyfilled = true
 		return nil
 	}
 	_, err := instance.sendDataToServer(ctx, (&message.Query{QueryString: polyfills.SystemCheck}).Reader(), 'Z')
@@ -242,7 +241,7 @@ func (instance *ProxyInstance) managePolyfills(ctx *proxy.Ctx) error {
 			return err
 		}
 	}
-	instance.systemPolyfilled = true
+	polyfills.Polyfilled = true
 	return nil
 }
 

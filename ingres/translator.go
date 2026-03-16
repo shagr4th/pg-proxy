@@ -13,16 +13,10 @@ import (
 type ingresTranslator struct {
 	withPlaceHolder     bool
 	withStrictFixedChar bool
+	polyfills           *sqlutils.Polyfills
 }
 
 func IngresTranslator(withStrictFixedChar bool) *ingresTranslator {
-	return &ingresTranslator{
-		withPlaceHolder:     false,
-		withStrictFixedChar: withStrictFixedChar, // true = better emulation (slower?) but maybe not necessary
-	}
-}
-
-func (v *ingresTranslator) Polyfills() *sqlutils.Polyfills {
 	textNumericOperatorTemplate := `
 CREATE OR REPLACE FUNCTION public.add_{}_text ({}, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
 CREATE OPERATOR public.+ (LEFTARG = {}, RIGHTARG = text, FUNCTION = public.add_{}_text);
@@ -39,7 +33,7 @@ CREATE OPERATOR public.+ (LEFTARG = character, RIGHTARG = character, FUNCTION = 
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "bigint") +
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "real") +
 		strings.ReplaceAll(textNumericOperatorTemplate, "{}", "numeric")
-	if !v.withStrictFixedChar {
+	if !withStrictFixedChar {
 		strictFixedCharConcatenationTemplate = ""
 	}
 
@@ -60,15 +54,24 @@ CREATE FUNCTION pg_temp.ingres_plus(anyelement, anyelement) RETURNS text AS $$
 	SELECT ($1::bytea || $2::bytea)::text;
 $$ LANGUAGE sql IMMUTABLE;`
 
-	if !v.withStrictFixedChar {
+	if !withStrictFixedChar {
 		strictFixedCharFunctionsTemplate = ""
 	}
 
-	return &sqlutils.Polyfills{
+	polyfills := &sqlutils.Polyfills{
 		SystemCheck:   `SELECT 'a'+'b'`,
 		SystemCreate:  `CREATE OPERATOR public.+ (LEFTARG = text, RIGHTARG = text, FUNCTION = textcat);` + strictFixedCharConcatenationTemplate,
 		SessionCreate: strictFixedCharFunctionsTemplate,
 	}
+	return &ingresTranslator{
+		polyfills:           polyfills,
+		withPlaceHolder:     false,
+		withStrictFixedChar: withStrictFixedChar, // true = better emulation (slower?) but maybe not necessary
+	}
+}
+
+func (v *ingresTranslator) Polyfills() *sqlutils.Polyfills {
+	return v.polyfills
 }
 
 func (v *ingresTranslator) RenameRowField(index int, rowField string) string {
@@ -78,7 +81,7 @@ func (v *ingresTranslator) RenameRowField(index int, rowField string) string {
 	return rowField
 }
 
-func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*sqlutils.Query, error) {
+func (v *ingresTranslator) Translate(query string) (*sqlutils.Query, error) {
 	query = strings.TrimSpace(query)
 	if strings.Contains(query, "/*NOTRANSLATION*/") {
 		return nil, nil
@@ -91,7 +94,7 @@ func (v *ingresTranslator) Translate(query string, systemPolyfilled bool) (*sqlu
 
 	token := parsed.First()
 	for {
-		token, err = v.singleQueryTranslate(parsed, token, systemPolyfilled)
+		token, err = v.singleQueryTranslate(parsed, token)
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +138,7 @@ func (v *ingresTranslator) functionReturnsChar(token *sqlutils.Token) bool {
 		(token.EqualFold("ifnull", "coalesce") && len(nextToken.Enclosing.Heads) == 2 && nextToken.Enclosing.Heads[1].Type == sqllexer.STRING)
 }
 
-func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *sqlutils.Token, systemPolyfilled bool) (*sqlutils.Token, error) {
+func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *sqlutils.Token) (*sqlutils.Token, error) {
 	var lastDDLToken *sqlutils.Token = nil
 	var copyToken *sqlutils.Token = nil
 	var copyIntoToken *sqlutils.Token = nil
@@ -361,7 +364,7 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("sysdate") {
 			token.SetValue("current_timestamp")
 			continue
-		} else if token.EqualFold("+") && !systemPolyfilled {
+		} else if token.EqualFold("+") && (v.polyfills == nil || !v.polyfills.Polyfilled) {
 			// Sans opérateur custom (dispo dans le polyfill), PG ne supporte pas la concaténation avec des +, on tente de transformer en || quand on est sûr de maniper des string
 			leftToken := token.Prev
 			rightToken := token.Next

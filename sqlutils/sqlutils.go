@@ -12,7 +12,7 @@ import (
 
 type Translator interface {
 	Polyfills() *Polyfills
-	Translate(query string, systemPolyfilled bool) (*Query, error)
+	Translate(query string) (*Query, error)
 	RenameRowField(index int, rowField string) string
 }
 
@@ -43,6 +43,7 @@ type Query struct {
 }
 
 type Polyfills struct {
+	Polyfilled    bool
 	SystemCheck   string
 	SystemCreate  string
 	SessionCreate string
@@ -63,7 +64,7 @@ func (t *isoTranslator) RenameRowField(index int, rowField string) string {
 	return rowField
 }
 
-func (t *isoTranslator) Translate(query string, systemPolyfilled bool) (*Query, error) {
+func (t *isoTranslator) Translate(query string) (*Query, error) {
 	return nil, nil
 }
 
@@ -351,8 +352,9 @@ func (t *Token) Paste(tokens ...*Token) *Token {
 
 func (t *Token) StartsWith(prefix string) bool {
 	prefix = strings.ToLower(prefix)
-	return (strings.HasPrefix(strings.ToLower(t.Value), prefix)) ||
-		(t.Type == sqllexer.QUOTED_IDENT && len(t.Value) > 1 && strings.HasPrefix(strings.ToLower(t.Value[1:]), prefix))
+	value := strings.ToLower(t.Value)
+	return (strings.HasPrefix(value, prefix)) ||
+		(t.Type == sqllexer.QUOTED_IDENT && len(t.Value) > 1 && strings.HasPrefix(value[1:], prefix))
 }
 
 /*

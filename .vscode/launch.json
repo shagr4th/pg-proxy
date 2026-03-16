@@ -8,8 +8,19 @@
             "name": "TESTS INGRES",
             "type": "go",
             "request": "launch",
-            "program": "${workspaceFolder}",
-            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/ingres",
+            "cwd": "${workspaceFolder}/ingres",
+            "mode": "test",
+            "args": [
+                "-test.v"
+            ],
+        },
+        {
+            "name": "TESTS SQLITE",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/sqlite",
+            "cwd": "${workspaceFolder}/sqlite",
             "mode": "test",
             "args": [
                 "-test.v"

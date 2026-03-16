@@ -246,7 +246,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlQuery(t, db, "select t.HEUREMAJ + COLUMN1  from TABLE1 t", []string{"100100dummy"})
 		sqlutils.AssertSqlQuery(t, db, "select COLUMN1 + HEUREMAJ from TABLE1 t", []string{"dummy100100"})
 		testQuery = "select substring(COLUMN1,(COLUMN1+COLUMN1)) from TABLE1"
-		parsed, err := instance.Translate(testQuery, true)
+		parsed, err := instance.Translate(testQuery)
 		sqlutils.AssertNoError(t, err)
 		sqlutils.AssertEquals(t, false, parsed.Transformed, testQuery)
 
@@ -258,7 +258,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlQuery(t, db, "SELECT COLUMN1 FROM TABLE1 LIMIT 1", []string{"XC"})
 
 		testQuery = "EXECUTE PROCEDURE TOTO (ARG = 't')"
-		parsed, err = instance.Translate(testQuery, true)
+		parsed, err = instance.Translate(testQuery)
 		sqlutils.AssertNoError(t, err)
 		sqlutils.AssertEquals(t, "CALL TOTO (ARG => 't')", parsed.Sql(), testQuery)
 
@@ -306,7 +306,7 @@ func TestTranslations(t *testing.T) {
 		}
 
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
-		res, err := instance.Translate(testQuery, true)
+		res, err := instance.Translate(testQuery)
 		sqlutils.AssertNoError(t, err)
 		sqlutils.AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
@@ -780,7 +780,7 @@ ORDER BY h.societe, h.etat, h.agence, h.client`
 	translator := IngresTranslator(withStrictFixedChar)
 
 	for range numThreads * 100 {
-		translator.Translate(large, true)
+		translator.Translate(large)
 	}
 	t.Logf("Time for %d rewrites : %d ms.\n", numThreads*100, time.Since(ss).Milliseconds())
 }
