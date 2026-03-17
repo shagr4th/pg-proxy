@@ -48,14 +48,8 @@ var _ backend.PGStartupMessageRewriter = (*ProxyInstance)(nil)
 var _ backend.PGResolver = (*ProxyInstance)(nil)
 
 type QueryContext struct {
-	Time        time.Time `json:"time"`
-	Results     int64     `json:"results"`
-	Duration    int64     `json:"duration"`
-	ClientInfo  string    `json:"client"`
-	OriginalSQL string    `json:"original"`
-	FinalSQL    string    `json:"final"` // empty when not transformed
-	Error       string    `json:"error"` // translation error, if any
-	Query       *sqlutils.Query
+	queryRecord
+	Query *sqlutils.Query
 
 	ongoingCopyQuery bool
 	prepared         bool
@@ -199,17 +193,9 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		return
 	}
 	if queryCtxt.OriginalSQL != "" && !queryCtxt.ongoingCopyQuery {
-		queryCtxt.Duration = time.Since(queryCtxt.Time).Microseconds()
+		queryCtxt.Duration = time.Since(queryCtxt.Time).Milliseconds()
 		if instance.queryStore != nil {
-			instance.queryStore.add(queryRecord{
-				Time:        queryCtxt.Time,
-				Duration:    queryCtxt.Duration,
-				Results:     queryCtxt.Results,
-				ClientInfo:  queryCtxt.ClientInfo,
-				OriginalSQL: queryCtxt.OriginalSQL,
-				FinalSQL:    queryCtxt.FinalSQL,
-				Error:       queryCtxt.Error,
-			})
+			instance.queryStore.add(queryCtxt.queryRecord)
 		}
 		query := queryCtxt.OriginalSQL
 		if queryCtxt.FinalSQL != "" {
@@ -218,7 +204,7 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		if queryCtxt.Error != "" {
 			log.Printf("ERROR [%s] %s, when executing: %s\n", queryCtxt.ClientInfo, queryCtxt.Error, query)
 		} else if instance.Verbose&4 == 4 || (instance.Verbose&2 == 2 && queryCtxt.FinalSQL != "") {
-			log.Printf("INFO  [%s] %s {%d results in %d µs}\n", queryCtxt.ClientInfo, query, queryCtxt.Results, queryCtxt.Duration)
+			log.Printf("INFO  [%s] %s {%d results in %d ms}\n", queryCtxt.ClientInfo, query, queryCtxt.Results, queryCtxt.Duration)
 		}
 		queryCtxt.Time = time.Now()
 		queryCtxt.Duration = 0
@@ -294,8 +280,10 @@ func (instance *ProxyInstance) handleAuthenticationOk(ctx *proxy.Ctx, msg *messa
 
 func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message.BackendKeyData) (*message.BackendKeyData, error) {
 	ctx.QueryContext = &QueryContext{
-		ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
-			ctx.ConnInfo.ClientAddress)),
+		queryRecord: queryRecord{
+			ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
+				ctx.ConnInfo.ClientAddress)),
+		},
 	}
 	err := instance.managePolyfills(ctx)
 	return msg, err

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const maxQueryBufferSize = 2000
+const maxQueryBufferSize = 1000
 
 // queryRecord holds information about a single SQL query that passed through the proxy.
 type queryRecord struct {
@@ -193,7 +193,7 @@ const webUIHTML = `<!DOCTYPE html>
   colgroup col:nth-child(2) { width: 140px; }
   colgroup col:nth-child(3) { width: calc(40% - 140px); }
   colgroup col:nth-child(4) { width: calc(40% - 80px); }
-  colgroup col:nth-child(5) { width: 5%; }
+  colgroup col:nth-child(5) { width: 7%; }
   colgroup col:nth-child(6) { width: 20%; }
   tbody tr.error { border-left: 2px solid var(--red); }
   td.err { color: var(--red); font-size: 11px; }
@@ -242,7 +242,7 @@ const webUIHTML = `<!DOCTYPE html>
 </div>
 <script>
 (function() {
-  const MAX_ROWS = 500;
+  const MAX_ROWS = 1000;
   const tbody = document.getElementById('tbody');
   const empty = document.getElementById('empty');
   const counter = document.getElementById('counter');
