@@ -235,6 +235,12 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
 		sqlutils.AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '"+TestCopyFile+"'", 2)
 
+		// Copy from missing file error test
+		_, err = sqlutils.DoExec(db, false, "COPY TABLE TABLE1 () FROM '/tmp/missing.file.out' with allocation = 4, row_estimate = 1091766")
+		if err == nil || !strings.Contains(err.Error(), "COPY from stdin failed: open /tmp/missing.file.out: no such file or directory") {
+			t.Errorf("unexpected error while simulating copy fail mechanism")
+		}
+
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"index1", "table1", "table2"})
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})
