@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"schenker/pg-proxy/ingres"
 	"schenker/pg-proxy/proxy"
+	"schenker/pg-proxy/sqlite"
 	"syscall"
 	"time"
 )
@@ -50,8 +51,11 @@ Commit: ` + commit)
 	flag.StringVar(&webSecret, "web-secret", "", "Web UI secret (default none)")
 	flag.Parse()
 
-	if translator == "ingres" {
+	switch translator {
+	case "ingres":
 		instance.Translator = ingres.IngresTranslator(false)
+	case "sqlite":
+		instance.Translator = sqlite.SqliteTranslator()
 	}
 	if startupOverride != "" {
 		err := json.Unmarshal([]byte(startupOverride), &instance.StartupParametersOverride)

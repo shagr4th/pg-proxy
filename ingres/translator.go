@@ -258,6 +258,9 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *s
 			if on != nil {
 				token.SetValue("DO")
 				fullTableName := tableToken.Value
+				if strings.HasPrefix(strings.ToLower(fullTableName), "session.") {
+					fullTableName = fullTableName[8:]
+				}
 				tableName := fullTableName
 				schemaName := ""
 				if strings.Contains(tableName, ".") {
