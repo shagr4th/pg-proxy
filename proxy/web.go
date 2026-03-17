@@ -294,7 +294,7 @@ const webUIHTML = `<!DOCTYPE html>
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
       '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
-      '<td class="sql">' + rec.results + ' in ' + rec.duration + ' µs</td>' +
+      '<td class="time">' + rec.results + ' in ' + rec.duration + ' µs</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;
   }

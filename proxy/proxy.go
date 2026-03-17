@@ -110,6 +110,10 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	if queryCtxt == nil {
 		return msg, nil
 	}
+	if queryCtxt.OriginalSQL != "" {
+		// query not previously logged
+		instance.traceQuery(ctx)
+	}
 	queryCtxt.Time = time.Now()
 	queryCtxt.OriginalSQL = msg.QueryString
 	queryCtxt.FinalSQL = ""
@@ -216,6 +220,9 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		} else if instance.Verbose&4 == 4 || (instance.Verbose&2 == 2 && queryCtxt.FinalSQL != "") {
 			log.Printf("INFO  [%s] %s {%d results in %d µs}\n", queryCtxt.ClientInfo, query, queryCtxt.Results, queryCtxt.Duration)
 		}
+		queryCtxt.Time = time.Now()
+		queryCtxt.Duration = 0
+		queryCtxt.Results = 0
 		queryCtxt.OriginalSQL = ""
 		queryCtxt.FinalSQL = ""
 	}
