@@ -63,7 +63,8 @@ func TestTranslations(t *testing.T) {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", TestProxyPort))
 	sqlutils.AssertNoError(t, err)
 
-	cnxStr := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
+	nativeConnectionUrl := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", TestUsername, TestPassword, TestDatabasePort, TestDatabaseName)
+	proxyConnectionUrl := fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=require", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort) // sslmode=disable
 
 	ingres := IngresTranslator(withStrictFixedChar)
 	instance := &proxy.ProxyInstance{
@@ -112,12 +113,12 @@ func TestTranslations(t *testing.T) {
 		}
 		t.Logf("Time spent for %d %s threads : %d ms.\n", numThreads, name, time.Since(start).Milliseconds())
 	}
-	connectionsTest("raw", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s?sslmode=disable", TestUsername, TestPassword, TestDatabasePort, TestDatabaseName), false)
-	connectionsTest("proxy", fmt.Sprintf("postgres://%s:%s@localhost:%d/%s@localhost:%d?sslmode=disable", TestUsername, TestPassword, TestProxyPort, TestDatabaseName, TestDatabasePort), false)
+	connectionsTest("native", nativeConnectionUrl, false)
+	connectionsTest("proxy", proxyConnectionUrl, false)
 
 	for _, driver := range []string{"postgres", "pgx"} { // test 2 drivers différents
 		t.Logf("Testing driver %s", driver)
-		db, err := sql.Open(driver, cnxStr)
+		db, err := sql.Open(driver, proxyConnectionUrl)
 		sqlutils.AssertNoError(t, err)
 		defer db.Close()
 

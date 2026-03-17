@@ -11,9 +11,10 @@ import (
 
 const maxQueryBufferSize = 2000
 
-// QueryRecord holds information about a single SQL query that passed through the proxy.
-type QueryRecord struct {
+// queryRecord holds information about a single SQL query that passed through the proxy.
+type queryRecord struct {
 	Time        time.Time `json:"time"`
+	Results     int64     `json:"results"`
 	Duration    int64     `json:"duration"`
 	ClientInfo  string    `json:"client"`
 	OriginalSQL string    `json:"original"`
@@ -21,20 +22,20 @@ type QueryRecord struct {
 	Error       string    `json:"error"` // translation error, if any
 }
 
-// QueryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.
+// queryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.
 // Memory is bounded permanently to maxQueryBufferSize entries.
-type QueryStore struct {
+type queryStore struct {
 	mu          sync.RWMutex
-	entries     [maxQueryBufferSize]QueryRecord
+	entries     [maxQueryBufferSize]queryRecord
 	head        int // next slot to write
 	count       int // number of valid entries (0..maxQueryBufferSize)
-	subscribers map[uint64]chan QueryRecord
+	subscribers map[uint64]chan queryRecord
 	nextSubID   uint64
 }
 
-// Add writes a record into the ring buffer (overwriting the oldest when full)
+// add writes a record into the ring buffer (overwriting the oldest when full)
 // and broadcasts to all SSE subscribers.
-func (s *QueryStore) Add(r QueryRecord) {
+func (s *queryStore) add(r queryRecord) {
 	s.mu.Lock()
 	s.entries[s.head] = r
 	s.head = (s.head + 1) % maxQueryBufferSize
@@ -51,11 +52,11 @@ func (s *QueryStore) Add(r QueryRecord) {
 	s.mu.Unlock()
 }
 
-// Recent returns a copy of all buffered records in insertion order (oldest first).
-func (s *QueryStore) Recent() []QueryRecord {
+// recent returns a copy of all buffered records in insertion order (oldest first).
+func (s *queryStore) recent() []queryRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]QueryRecord, s.count)
+	out := make([]queryRecord, s.count)
 	start := (s.head - s.count + maxQueryBufferSize) % maxQueryBufferSize
 	for i := range out {
 		out[i] = s.entries[(start+i)%maxQueryBufferSize]
@@ -63,9 +64,9 @@ func (s *QueryStore) Recent() []QueryRecord {
 	return out
 }
 
-// Subscribe registers a new SSE subscriber. Returns the sub ID and a receive channel.
-func (s *QueryStore) Subscribe() (uint64, <-chan QueryRecord) {
-	ch := make(chan QueryRecord, 64)
+// subscribe registers a new SSE subscriber. Returns the sub ID and a receive channel.
+func (s *queryStore) subscribe() (uint64, <-chan queryRecord) {
+	ch := make(chan queryRecord, 64)
 	s.mu.Lock()
 	id := s.nextSubID
 	s.nextSubID++
@@ -74,8 +75,8 @@ func (s *QueryStore) Subscribe() (uint64, <-chan QueryRecord) {
 	return id, ch
 }
 
-// Unsubscribe removes a subscriber.
-func (s *QueryStore) Unsubscribe(id uint64) {
+// unsubscribe removes a subscriber.
+func (s *queryStore) unsubscribe(id uint64) {
 	s.mu.Lock()
 	if ch, ok := s.subscribers[id]; ok {
 		delete(s.subscribers, id)
@@ -100,8 +101,8 @@ func secretAuth(secret string, next http.HandlerFunc) http.HandlerFunc {
 
 // StartWebServer starts the HTTP server for the web UI in a goroutine.
 func (instance *ProxyInstance) StartWebServer(port int, secret string) {
-	instance.queryStore = &QueryStore{
-		subscribers: make(map[uint64]chan QueryRecord),
+	instance.queryStore = &queryStore{
+		subscribers: make(map[uint64]chan queryRecord),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", secretAuth(secret, func(w http.ResponseWriter, r *http.Request) {
@@ -120,14 +121,14 @@ func (instance *ProxyInstance) StartWebServer(port int, secret string) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 
 		// Send existing records as backfill
-		for _, rec := range instance.queryStore.Recent() {
+		for _, rec := range instance.queryStore.recent() {
 			data, _ := json.Marshal(rec)
 			fmt.Fprintf(w, "data: %s\n\n", data)
 		}
 		flusher.Flush()
 
-		subID, ch := instance.queryStore.Subscribe()
-		defer instance.queryStore.Unsubscribe(subID)
+		subID, ch := instance.queryStore.subscribe()
+		defer instance.queryStore.unsubscribe(subID)
 
 		ctx := r.Context()
 		for {
@@ -192,7 +193,8 @@ const webUIHTML = `<!DOCTYPE html>
   colgroup col:nth-child(2) { width: 140px; }
   colgroup col:nth-child(3) { width: calc(40% - 140px); }
   colgroup col:nth-child(4) { width: calc(40% - 80px); }
-  colgroup col:nth-child(5) { width: 20%; }
+  colgroup col:nth-child(5) { width: 5%; }
+  colgroup col:nth-child(6) { width: 20%; }
   tbody tr.error { border-left: 2px solid var(--red); }
   td.err { color: var(--red); font-size: 11px; }
   thead th { position: sticky; top: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: 7px 10px; text-align: left; font-size: 11px; color: var(--text-dim); font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; z-index: 1; }
@@ -222,7 +224,7 @@ const webUIHTML = `<!DOCTYPE html>
 <div class="table-wrap" id="tableWrap">
   <table id="queryTable">
     <colgroup>
-      <col><col><col><col><col>
+      <col><col><col><col><col><col>
     </colgroup>
     <thead>
       <tr>
@@ -230,6 +232,7 @@ const webUIHTML = `<!DOCTYPE html>
         <th>Client</th>
         <th>Original SQL</th>
         <th>Translated SQL</th>
+        <th>Results</th>
         <th>Error</th>
       </tr>
     </thead>
@@ -291,6 +294,7 @@ const webUIHTML = `<!DOCTYPE html>
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
       '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
+      '<td class="sql">' + rec.results + ' in ' + rec.duration + ' µs</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;
   }
@@ -308,7 +312,7 @@ const webUIHTML = `<!DOCTYPE html>
         tr.cells[3].innerHTML = rec.final
           ? highlight(rec.final, filterText)
           : '<span style="color:var(--text-dim)">—</span>';
-        tr.cells[4].innerHTML = rec.error ? highlight(rec.error, filterText) : '';
+        tr.cells[5].innerHTML = rec.error ? highlight(rec.error, filterText) : '';
       }
     }
     counter.textContent = totalCount + ' queries' + (filterText ? ' (' + visible + ' shown)' : '');

@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,7 +40,7 @@ type ProxyInstance struct {
 	StartupParametersOverride map[string]string
 	sqlutils.Translator
 
-	queryStore   *QueryStore
+	queryStore   *queryStore
 	polyfillLock *sync.RWMutex
 }
 
@@ -48,6 +49,8 @@ var _ backend.PGResolver = (*ProxyInstance)(nil)
 
 type QueryContext struct {
 	Time        time.Time `json:"time"`
+	Results     int64     `json:"results"`
+	Duration    int64     `json:"duration"`
 	ClientInfo  string    `json:"client"`
 	OriginalSQL string    `json:"original"`
 	FinalSQL    string    `json:"final"` // empty when not transformed
@@ -118,9 +121,6 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 		queryCtxt.Error = err.Error()
 	}
 	if queryCtxt.Query == nil || !queryCtxt.Query.Transformed {
-		if instance.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] %s\n", queryCtxt.ClientInfo, msg.QueryString)
-		}
 		return msg, nil
 	} else if queryCtxt.Query.LocalCopy == "$1" {
 		msg.ParameterIDs = []uint32{25}
@@ -130,9 +130,6 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	msg.QueryString = queryCtxt.FinalSQL
 	if instance.KeepOriginal {
 		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(queryCtxt.OriginalSQL, "\n", "\n-- "), "\r", "")
-	}
-	if instance.Verbose&2 == 2 {
-		log.Printf("INFO  [%s] %s in %d µs\n", queryCtxt.ClientInfo, msg.QueryString, time.Since(queryCtxt.Time).Microseconds())
 	}
 	return msg, nil
 }
@@ -192,21 +189,32 @@ func (instance *ProxyInstance) sendDataToServer(ctx *proxy.Ctx, reader io.Reader
 	}
 }
 
-func (instance *ProxyInstance) cleanupStore(ctx *proxy.Ctx) {
+func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
 		return
 	}
 	if queryCtxt.OriginalSQL != "" && !queryCtxt.ongoingCopyQuery {
+		queryCtxt.Duration = time.Since(queryCtxt.Time).Microseconds()
 		if instance.queryStore != nil {
-			instance.queryStore.Add(QueryRecord{
+			instance.queryStore.add(queryRecord{
 				Time:        queryCtxt.Time,
-				Duration:    time.Since(queryCtxt.Time).Milliseconds(),
+				Duration:    queryCtxt.Duration,
+				Results:     queryCtxt.Results,
 				ClientInfo:  queryCtxt.ClientInfo,
 				OriginalSQL: queryCtxt.OriginalSQL,
 				FinalSQL:    queryCtxt.FinalSQL,
 				Error:       queryCtxt.Error,
 			})
+		}
+		query := queryCtxt.OriginalSQL
+		if queryCtxt.FinalSQL != "" {
+			query = fmt.Sprintf("%s {original: %s}", queryCtxt.FinalSQL, queryCtxt.OriginalSQL)
+		}
+		if queryCtxt.Error != "" {
+			log.Printf("ERROR [%s] %s, when executing: %s\n", queryCtxt.ClientInfo, queryCtxt.Error, query)
+		} else if instance.Verbose&4 == 4 || (instance.Verbose&2 == 2 && queryCtxt.FinalSQL != "") {
+			log.Printf("INFO  [%s] %s {%d results in %d µs}\n", queryCtxt.ClientInfo, query, queryCtxt.Results, queryCtxt.Duration)
 		}
 		queryCtxt.OriginalSQL = ""
 		queryCtxt.FinalSQL = ""
@@ -245,8 +253,18 @@ func (instance *ProxyInstance) managePolyfills(ctx *proxy.Ctx) error {
 	return nil
 }
 
-func (instance *ProxyInstance) handleReadyForQuery(ctx *proxy.Ctx, msg *message.ReadyForQuery) (*message.ReadyForQuery, error) {
-	instance.cleanupStore(ctx)
+func (instance *ProxyInstance) handleCommandComplete(ctx *proxy.Ctx, msg *message.CommandComplete) (*message.CommandComplete, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if msg != nil && queryCtxt != nil {
+		parts := strings.Split(msg.CommandTag, " ")
+		if len(parts) > 0 {
+			res, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+			if err == nil {
+				queryCtxt.Results = res
+			}
+		}
+	}
+	instance.traceQuery(ctx)
 	return msg, nil
 }
 
@@ -255,7 +273,7 @@ func (instance *ProxyInstance) handleTerminate(ctx *proxy.Ctx, msg *message.Term
 	if instance.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("INFO  [%s] Client sent termination\n", queryCtxt.ClientInfo)
 	}
-	instance.cleanupStore(ctx)
+	instance.traceQuery(ctx)
 	return msg, nil
 }
 
@@ -410,12 +428,8 @@ func (instance *ProxyInstance) handleErrorResponse(ctx *proxy.Ctx, msg *message.
 				errorMessage = err.Value
 				if queryCtxt.OriginalSQL != "" && queryCtxt.Error == "" { // erreur postgres sans traduction en erreur
 					queryCtxt.Error = err.Value
-					errorMessage = fmt.Sprintf("%v (from query: %s)", err.Value, queryCtxt.OriginalSQL)
 				} else if queryCtxt.Error != "" { // erreur interne du proxy
-					if queryCtxt.OriginalSQL == "" {
-						queryCtxt.OriginalSQL = "<unknown>"
-					}
-					errorMessage = fmt.Sprintf("pg-proxy error: %v (from query: %s) (postgres error: %s)", queryCtxt.Error, queryCtxt.OriginalSQL, err.Value)
+					errorMessage = fmt.Sprintf("pg-proxy error: %v (postgres error: %s)", queryCtxt.Error, err.Value)
 					// on surcharge le retour d'erreur pour le client
 					newFields := append(msg.Fields[0:i], message.ErrorField{
 						Type:  err.Type,
@@ -428,10 +442,10 @@ func (instance *ProxyInstance) handleErrorResponse(ctx *proxy.Ctx, msg *message.
 				errorCode = err.Value
 			}
 		}
-		instance.cleanupStore(ctx)
-		if (instance.Verbose&2 == 2 || instance.Verbose&4 == 4) && len(errorMessage) > 0 {
-			log.Printf("ERROR [%s] %s (error code: %s)\n", queryCtxt.ClientInfo, errorMessage, errorCode)
+		if errorMessage != "" {
+			queryCtxt.Error = fmt.Sprintf("%s (error code: %s)", errorMessage, errorCode)
 		}
+		instance.traceQuery(ctx)
 	}
 	return msg, nil
 }
@@ -520,7 +534,7 @@ func (instance *ProxyInstance) NewServer() (*proxy.Server, error) {
 	serverMessageHandlers.AddHandleBackendKeyData(instance.handleBackendKeyData)
 	serverMessageHandlers.AddHandleParameterDescription(instance.handleParameterDescription)
 	serverMessageHandlers.AddHandleRowDescription(instance.handleRowDescription)
-	serverMessageHandlers.AddHandleReadyForQuery(instance.handleReadyForQuery)
+	serverMessageHandlers.AddHandleCommandComplete(instance.handleCommandComplete)
 	serverMessageHandlers.AddHandleAuthenticationOk(instance.handleAuthenticationOk)
 	serverMessageHandlers.AddHandleErrorResponse(instance.handleErrorResponse)
 	serverMessageHandlers.AddHandleCopyInResponse(instance.handleCopyInResponse)
