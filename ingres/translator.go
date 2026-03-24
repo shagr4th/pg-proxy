@@ -553,6 +553,10 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("to_char") && len(enclosure.Heads) == 1 {
 			token.SetValue("")
 			enclosure.End.Append("::", "text")
+		} else if token.EqualFold("to_date") && len(enclosure.Heads) == 1 {
+			enclosure.Start.Append("regexp_replace", "(")
+			// ingres supports both formats: YYYY-MM-DD and MM/DD/YYYY (cause datestyle to iso,us)
+			enclosure.End.Prev.Append(",", "'(\\d\\d)/(\\d\\d)/(\\d\\d\\d\\d)'", ",", "'\\3-\\1-\\2'", ")", ",", " ", "'YYYY-MM-DD'")
 		} else if token.EqualFold("date_format") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Type == sqllexer.STRING {
 			token.SetValue("to_char")
 			// https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Date_and_Time_Functions.htm

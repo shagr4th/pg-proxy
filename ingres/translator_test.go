@@ -312,6 +312,22 @@ func TestTranslations(t *testing.T) {
 			sqlutils.AssertEquals(t, 1, timeResults[0].Day(), testQuery)
 		}
 
+		testQuery = "SELECT to_date('12/24/2015')"
+		timeResults = sqlutils.AssertSqlRowCount[time.Time](t, db, testQuery, 1)
+		if timeResults != nil {
+			sqlutils.AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+			sqlutils.AssertEquals(t, 24, timeResults[0].Day(), testQuery)
+			sqlutils.AssertEquals(t, 2015, timeResults[0].Year(), testQuery)
+		}
+
+		testQuery = "select to_date('2015-12-24')"
+		timeResults = sqlutils.AssertSqlRowCount[time.Time](t, db, testQuery, 1)
+		if timeResults != nil {
+			sqlutils.AssertEquals(t, time.December, timeResults[0].Month(), testQuery)
+			sqlutils.AssertEquals(t, 24, timeResults[0].Day(), testQuery)
+			sqlutils.AssertEquals(t, 2015, timeResults[0].Year(), testQuery)
+		}
+
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
 		res, err := instance.Translate(testQuery)
 		sqlutils.AssertNoError(t, err)
