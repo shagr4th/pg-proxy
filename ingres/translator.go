@@ -550,6 +550,9 @@ from information_schema.columns c)`)
 			} else {
 				token.SetValue("pg_temp.ingres_" + strings.ToLower(token.Value))
 			}
+		} else if token.EqualFold("to_char") && len(enclosure.Heads) == 1 {
+			token.SetValue("")
+			enclosure.End.Append("::", "text")
 		} else if token.EqualFold("date_format") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Type == sqllexer.STRING {
 			token.SetValue("to_char")
 			// https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Date_and_Time_Functions.htm

@@ -345,6 +345,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlQuery(t, db, "select DATE_FORMAT(DATE('now'), '%Y%m%d')", []string{now.Format("20060102")})
 		sqlutils.AssertSqlQuery(t, db, "select DATE_FORMAT(SYSDATE, '%Y')", []string{fmt.Sprintf("%d", now.Year())})
 		sqlutils.AssertSqlQuery(t, db, "select TO_CHAR(SYSDATE, 'YYYYMMDD')", []string{now.Format("20060102")})
+		sqlutils.AssertSqlQuery(t, db, "select to_char(EXTRACT(DAY FROM CURRENT_DATE))", []string{now.Format("02")})
 		sqlutils.AssertSqlQuery(t, db, "select ('x x ')::char(4)", []string{now.Format("x x ")})
 		// not implemented sqlutils.AssertSqlQuery(t, db, "SELECT SHIFT('Company',4)", []string{"   Com"})
 		// not implemented sqlutils.AssertSqlQuery(t, db, "SELECT SHIFT('Company',-4)", []string{"any    "})
