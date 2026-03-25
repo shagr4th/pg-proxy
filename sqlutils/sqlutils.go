@@ -209,7 +209,11 @@ func (q *Query) Sql() string {
 	n := 0
 	for i, token := range q.tokens {
 		if token.Type == sqllexer.SPACE {
-			token.SetValue(" ")
+			if strings.Contains(token.Value, "\n") {
+				token.SetValue("\n")
+			} else {
+				token.SetValue(" ")
+			}
 			// formatage plus sympa:
 			if i > 0 && q.tokens[i-1].EqualFold("(") {
 				token.SetValue("")
