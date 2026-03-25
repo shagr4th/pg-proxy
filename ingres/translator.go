@@ -311,6 +311,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *s
 		if tableToken != nil && tableToken.Next != nil {
 			tableToken.Cut(tableToken.Next)
 		}
+	} else if token.EqualFold("SELECT") && token.Next != nil && token.Next.EqualFold("FIRST") && token.Next.Next != nil {
+		cutted := token.Next.Cut(token.Next.Next.Next)
+		cutted[0].SetValue("LIMIT")
+		token.Last().Append(" ").Paste(cutted...)
 	} else if token.EqualFold("EXECUTE") && token.Next != nil && token.Next.EqualFold("PROCEDURE") {
 		token.Next.Cut(token.Next.Next)
 		token.SetValue("CALL")

@@ -328,6 +328,8 @@ func TestTranslations(t *testing.T) {
 			sqlutils.AssertEquals(t, 2015, timeResults[0].Year(), testQuery)
 		}
 
+		sqlutils.AssertSqlQuery(t, db, "select first 1 * from (select 1 union select 2) a", []string{"1"})
+
 		testQuery = "create temporary table session_tmp_param as select char(par.param2,2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1           and par.param1 = 'VEN' on commit preserve rows"
 		res, err := instance.Translate(testQuery)
 		sqlutils.AssertNoError(t, err)
