@@ -582,9 +582,9 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("date") && len(enclosure.Heads) == 1 {
 			/* PG ne garde pas les H:M:S avec date(""), mais dans ingres, date("2012-12-01 16:55:15") retourne un timestamp avec les H:M:S */
 			token.Cut(token.Next) // suppression token de fonction
-			if strings.EqualFold(enclosure.Heads[0].Value, "'today'") || strings.EqualFold(enclosure.Heads[0].Value, "sysdate") {
+			if enclosure.Heads[0].EqualFold("'today'") || enclosure.Heads[0].EqualFold("sysdate") {
 				enclosure.End.Append("::", "date") // cas particulier ou c'est interprété comme une date et non un timestamp
-			} else if strings.EqualFold(enclosure.Heads[0].Value, "'now'") {
+			} else if enclosure.Heads[0].EqualFold("'now'") {
 				enclosure.End.Append("::", "timestamptz") // cas particulier ou c'est interprété comme un timestamp avec timezone
 			} else {
 				enclosure.End.Append("::", "timestamp")
@@ -613,14 +613,13 @@ from information_schema.columns c)`)
 			firstArg := enclosure.Heads[0].Cut(enclosure.Heads[1].Prev)
 			for i := 2; i < len(enclosure.Heads); i += 2 {
 				enclosure.Heads[i-1].Prev.Set(sqllexer.SPACE, " ").Append("WHEN", " ", "(").Paste(firstArg...).Append(")", " ", "=", " ")
-				enclosure.Heads[i].Prev.Set(sqllexer.SPACE, " ").Append("THEN").Append(" ")
+				enclosure.Heads[i].Prev.Set(sqllexer.SPACE, " ").Append("THEN", " ")
 			}
-			tempToken := enclosure.Heads[len(enclosure.Heads)-1].Prev.Set(sqllexer.SPACE, " ")
+			finalCondition := "THEN"
 			if len(enclosure.Heads)%2 == 0 {
-				tempToken.Append("ELSE", " ")
-			} else {
-				tempToken.Append("THEN", " ")
+				finalCondition = "ELSE"
 			}
+			enclosure.Heads[len(enclosure.Heads)-1].Prev.Set(sqllexer.SPACE, " ").Append(finalCondition, " ")
 			token.Set(sqllexer.IDENT, "CASE")
 			enclosure.Start.Set(sqllexer.SPACE, " ")
 			enclosure.End.Set(sqllexer.SPACE, " ").Append("END", " ")
