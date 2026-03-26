@@ -22,6 +22,8 @@ const (
 	InitMessageSizeLength = 4
 )
 
+var ErrSkipMsg = errors.New("skip message fake error")
+
 type Server struct {
 	PGResolver                    backend.PGResolver
 	PGStartupMessageRewriter      backend.PGStartupMessageRewriter
@@ -76,9 +78,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 		s.clients.Store(conn.LocalAddr().String(), conn)
 
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
+		s.wg.Go(func() {
 			defer conn.Close()
 			defer s.clients.Delete(conn.LocalAddr().String())
 
@@ -94,7 +94,7 @@ func (s *Server) Serve(ln net.Listener) error {
 					s.OnHandleConnError(err, ctx, conn)
 				}
 			}
-		}()
+		})
 	}
 }
 
@@ -281,7 +281,7 @@ func (s *Server) processMessages(typ string, ctx *Ctx, r io.Reader, w io.Writer,
 		} else {
 			_, err = io.Copy(wb, bytes.NewReader(ms))
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, ErrSkipMsg) {
 			return err
 		}
 		if rb.End() {

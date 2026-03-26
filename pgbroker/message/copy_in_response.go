@@ -1,20 +1,15 @@
 package message
 
 import (
-	"bytes"
 	"io"
 )
 
 type CopyInResponse struct {
 	OverallFormat     uint8
 	ColumnFormatCodes []uint16
-	BypassReturn      bool
 }
 
 func (m *CopyInResponse) Reader() io.Reader {
-	if m.BypassReturn {
-		return bytes.NewBuffer([]byte{})
-	}
 	b := NewBase(1 + 2 + 2*len(m.ColumnFormatCodes))
 	b.WriteUint8(m.OverallFormat)
 	b.WriteUint16(uint16(len(m.ColumnFormatCodes)))

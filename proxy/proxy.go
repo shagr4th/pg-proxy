@@ -320,7 +320,6 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 	}
 	queryCtxt.ongoingCopyQuery = false
 	if queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
-		msg.BypassReturn = true
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
@@ -331,7 +330,7 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 			}).Reader()); err != nil {
 				return nil, fmt.Errorf("Copy Fail write failed: %w", err)
 			}
-			return msg, nil
+			return msg, proxy.ErrSkipMsg
 		}
 		defer f.Close()
 		buf := make([]byte, 65536)
@@ -355,7 +354,7 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 				}).Reader()); err != nil {
 					return nil, fmt.Errorf("Copy Fail write failed: %w", err)
 				}
-				return msg, nil
+				return msg, proxy.ErrSkipMsg
 			}
 		}
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
@@ -369,6 +368,7 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
+		return msg, proxy.ErrSkipMsg
 	}
 	return msg, nil
 }
@@ -388,7 +388,7 @@ func (instance *ProxyInstance) handleCopyOutResponse(ctx *proxy.Ctx, msg *messag
 			return msg, err
 		}
 		defer f.Close()
-		msg.BypassReturn = true
+		return msg, proxy.ErrSkipMsg
 	}
 	return msg, nil
 }
@@ -405,7 +405,7 @@ func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyD
 		if err != nil {
 			return msg, err
 		}
-		msg.BypassReturn = true
+		return msg, proxy.ErrSkipMsg
 	}
 	return msg, nil
 }
@@ -416,7 +416,7 @@ func (instance *ProxyInstance) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyD
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
-		msg.BypassReturn = true
+		return msg, proxy.ErrSkipMsg
 	}
 	return msg, nil
 }

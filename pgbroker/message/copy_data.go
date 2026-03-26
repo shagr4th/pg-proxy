@@ -1,19 +1,14 @@
 package message
 
 import (
-	"bytes"
 	"io"
 )
 
 type CopyData struct {
-	Data         []byte
-	BypassReturn bool
+	Data []byte
 }
 
 func (m *CopyData) Reader() io.Reader {
-	if m.BypassReturn {
-		return bytes.NewBuffer([]byte{})
-	}
 	b := NewBase(len(m.Data))
 	b.WriteByteN(m.Data)
 	return b.SetType('d').Reader()
