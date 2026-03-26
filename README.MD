@@ -12,8 +12,8 @@ Usage of ./pg-proxy:
         Keep the original query at the end in a multiline SQL comment (default true)
   -key string
         SSL key file *.key (default none)
-  -override string
-        Startup parameters override, in JSON format (default "{}")
+  -parameters string
+        Default client parameters (without override of the client's ones), in JSON format (default "{}")
   -polyfill
         Polyfills already applied by a system account (default true)
   -port int

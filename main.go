@@ -35,7 +35,7 @@ Commit: ` + commit)
 	}
 
 	var translator string
-	var startupOverride string
+	var defaultClientParameters string
 	var webPort int
 	var webSecret string
 	flag.StringVar(&instance.Host, "host", "", "Listener host (default all local interfaces)")
@@ -46,7 +46,7 @@ Commit: ` + commit)
 	flag.StringVar(&instance.CertificateFile, "certificate", "", "SSL certificate file *.crt (default none)")
 	flag.StringVar(&instance.KeyFile, "key", "", "SSL key file *.key (default none)")
 	flag.StringVar(&translator, "translator", "iso", "Query translator ('ingres' or 'iso')")
-	flag.StringVar(&startupOverride, "override", "{}", "Startup parameters override, in JSON format")
+	flag.StringVar(&defaultClientParameters, "parameters", "{}", "Default client parameters (without override of the client's ones), in JSON format")
 	flag.IntVar(&webPort, "web-port", 0, "Web UI port for query monitoring (0 = disabled)")
 	flag.StringVar(&webSecret, "web-secret", "", "Web UI secret (default none)")
 	flag.Parse()
@@ -57,8 +57,8 @@ Commit: ` + commit)
 	case "sqlite":
 		instance.Translator = sqlite.SqliteTranslator()
 	}
-	if startupOverride != "" {
-		err := json.Unmarshal([]byte(startupOverride), &instance.StartupParametersOverride)
+	if defaultClientParameters != "" {
+		err := json.Unmarshal([]byte(defaultClientParameters), &instance.DefaultClientParameters)
 		if err != nil {
 			log.Panic(err)
 		}
@@ -80,8 +80,7 @@ Commit: ` + commit)
 	if len(instance.Remote) > 0 {
 		banner = fmt.Sprintf("proxying to %s", instance.Remote)
 	}
-	b, _ := json.Marshal(instance.StartupParametersOverride)
-	log.Printf("[Listening on %s:%d with %s translator and %s startup parameters] "+banner, instance.Host, instance.Port, translator, string(b))
+	log.Printf("[Listening on %s:%d with %s translator] "+banner, instance.Host, instance.Port, translator)
 	go server.Serve(ln)
 
 	sigs := make(chan os.Signal, 1)

@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"maps"
 	"math/big"
 	"net"
 	"os"
@@ -30,14 +29,14 @@ import (
 )
 
 type ProxyInstance struct {
-	Host                      string
-	Port                      int
-	Remote                    string
-	CertificateFile           string
-	KeyFile                   string
-	Verbose                   int
-	KeepOriginal              bool
-	StartupParametersOverride map[string]string
+	Host                    string
+	Port                    int
+	Remote                  string
+	CertificateFile         string
+	KeyFile                 string
+	Verbose                 int
+	KeepOriginal            bool
+	DefaultClientParameters map[string]string
 	sqlutils.Translator
 
 	queryStore   *queryStore
@@ -76,8 +75,12 @@ func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Add
 }
 
 func (instance *ProxyInstance) RewriteParameters(original map[string]string) map[string]string {
-	if instance.StartupParametersOverride != nil {
-		maps.Copy(original, instance.StartupParametersOverride)
+	if instance.DefaultClientParameters != nil {
+		for key, value := range instance.DefaultClientParameters {
+			if _, exists := original[key]; !exists {
+				original[key] = value
+			}
+		}
 	}
 	return original
 }

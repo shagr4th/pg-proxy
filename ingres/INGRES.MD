@@ -2,7 +2,7 @@
 
 ### How to launch
 
-Lancement en mode Ingres: `pg-proxy -translator ingres -override '{"datestyle":"iso,us"}' -remote postgreshost:5432` (on surcharge datestyle pour simuler le date_format=US par défaut dans la base Ingres)
+Lancement en mode Ingres: `pg-proxy -translator ingres -parameters '{"datestyle":"iso,us"}' -remote postgreshost:5432` (on surcharge datestyle pour simuler le date_format=US par défaut dans la base Ingres)
 
 ### Translated syntax
 
