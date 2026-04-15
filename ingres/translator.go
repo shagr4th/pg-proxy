@@ -249,6 +249,10 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *s
 		}
 	} else if token.EqualFold("MODIFY") {
 		tableToken := token.Next
+		if tableToken != nil && tableToken.EqualFold("TABLE") {
+			tableToken.Cut(tableToken.Next)
+			tableToken = tableToken.Next
+		}
 		if tableToken != nil {
 			WITH := token.Search("WITH", nil, true)
 			if WITH != nil {

@@ -416,7 +416,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertNoError(t, err)
 		sqlutils.AssertSqlQuery(t, db, "select TO_CHAR(TIMESTAMPADD(HOUR, 1, SYSDATE), 'HH24')", []string{fmt.Sprintf("%02d", (currentHour+1)%24)})
 		sqlutils.AssertSqlExec(t, db, true, "modify TABLE1 to btree unique on column1, heuremaj with location=(ii_database), fillfactor = 80, extend = 16, allocation = 4", 0)
-		sqlutils.AssertSqlExec(t, db, true, "modify public.TABLE2 to isam on column2 with fillfactor = 80, extend = 16, page_size = 8192", 0)
+		sqlutils.AssertSqlExec(t, db, true, "modify table public.TABLE2 to isam on column2 with fillfactor = 80, extend = 16, page_size = 8192", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP SEQUENCE IF EXISTS seq_tarif", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE SEQUENCE seq_tarif INCREMENT BY 1 MINVALUE 1 MAXVALUE 100000 START 1", 0)
 		sqlutils.AssertSqlQuery(t, db, "select seq_tarif.nextval", []int{1})
