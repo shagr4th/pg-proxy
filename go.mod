@@ -3,10 +3,10 @@ module schenker/pg-proxy
 go 1.25.3
 
 require (
-	github.com/DataDog/go-sqllexer v0.2.1
+	github.com/DataDog/go-sqllexer v0.2.2
 	github.com/fergusstrange/embedded-postgres v1.34.0
-	github.com/jackc/pgx/v5 v5.9.1
-	github.com/lib/pq v1.12.0
+	github.com/jackc/pgx/v5 v5.9.2
+	github.com/lib/pq v1.12.3
 )
 
 require (
@@ -15,5 +15,5 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 )
