@@ -16,13 +16,13 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-            asset_name: ${{ github.event.repository.name }}-linux-amd64
+            asset_name: pg-proxy-linux-amd64
           - goos: windows
             goarch: amd64
-            asset_name: ${{ github.event.repository.name }}-windows-amd64.exe
+            asset_name: pg-proxy-windows-amd64.exe
           - goos: aix
             goarch: ppc64
-            asset_name: ${{ github.event.repository.name }}-aix-ppc64
+            asset_name: pg-proxy-aix-ppc64
 
     steps:
       - name: Checkout code
@@ -77,10 +77,6 @@ jobs:
           mkdir -p release
           find artifacts -type f -exec mv {} release/ \;
 
-      - name: Create checksums
-        working-directory: release
-        run: sha256sum * > checksums.txt
-
       - name: Create release
         uses: https://gitea.com/actions/gitea-release-action@main
         with:
@@ -93,13 +89,9 @@ jobs:
             ### Downloads
             | Platform      | Architecture | File                                      |
             |---------------|--------------|-------------------------------------------|
-            | Linux         | x86_64       | `${{ github.event.repository.name }}-linux-amd64`                           |
-            | Windows       | x86_64       | `${{ github.event.repository.name }}-windows-amd64.exe`                     |
-            | AIX           | ppc64        | `${{ github.event.repository.name }}-aix-ppc64`                             |
-
-            ### Verify integrity
-            ```sh
-            sha256sum -c checksums.txt
+            | Linux         | x86_64       | `pg-proxy-linux-amd64`                    |
+            | Windows       | x86_64       | `pg-proxy-windows-amd64.exe`              |
+            | AIX           | ppc64        | `pg-proxy-aix-ppc64`                      |
             ```
           files: |
             release/*
