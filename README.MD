@@ -34,5 +34,5 @@ Usage of ./pg-proxy:
 
 the pgbroker folder is a copy of the [original project](https://github.com/rueian/pgbroker), with two small changes:
 
-* Messages of the types `copyin`, `copyout`, `copydata`, `copydone`, coming from the server, can be skipped, so ce wan implement a different copy protocol management (so we can make the copy files local to the application server, and not to the postgres server)
+* PG Messages coming from the server can be skipped with a ErrSkipMsg, so ce wan implement an alternative copy protocol management and manage the COPY files on to the application server, not on the postgres server
 * a new variable `QueryContext` has been added to the original connection context
