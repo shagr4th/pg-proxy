@@ -445,7 +445,26 @@ func TestTranslations(t *testing.T) {
 			defer os.Remove(TestCopyFile)
 			tx, err = db.Begin()
 			sqlutils.AssertNoError(t, err)
-			sqlutils.AssertSqlExec(t, tx, true, "COPY TABLE2 INTO $1", size, TestCopyFile)
+			stmt, err := tx.Prepare("COPY TABLE2 INTO $1")
+			sqlutils.AssertNoError(t, err)
+			defer stmt.Close()
+			res, err := stmt.Exec(TestCopyFile) // 1ère exécution
+			rowsAffected, err := res.RowsAffected()
+
+			tempStmt, err := tx.Prepare("Set lockmode session where readlock=nolock") // simulation de destruction d'un context de requête
+			sqlutils.AssertNoError(t, err)
+			defer tempStmt.Close()
+			res, err = tempStmt.Exec()
+			sqlutils.AssertNoError(t, err)
+			rowsAffected, err = res.RowsAffected()
+
+			err = os.Remove(TestCopyFile)
+			sqlutils.AssertNoError(t, err)
+			res, err = stmt.Exec(TestCopyFile) // 2ème exécution
+			_, err = os.Stat(TestCopyFile)
+			sqlutils.AssertNoError(t, err)
+			rowsAffected, err = res.RowsAffected()
+			sqlutils.AssertEquals(t, size, rowsAffected)
 			err = tx.Commit()
 			sqlutils.AssertNoError(t, err)
 
