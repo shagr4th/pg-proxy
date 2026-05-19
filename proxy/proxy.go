@@ -330,13 +330,13 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 	if queryCtxt == nil {
 		return msg, nil
 	}
+	queryCtxt.ongoingCopyQuery = false
 	if queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
 		f, err := os.Open(queryCtxt.Query.LocalCopy)
 		if err != nil {
-			queryCtxt.ongoingCopyQuery = false
 			if _, err := io.Copy(ctx.ServerConn, (&message.CopyFail{
 				ErrorMessage: err.Error(),
 			}).Reader()); err != nil {
@@ -354,7 +354,6 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
-					queryCtxt.ongoingCopyQuery = false
 					return nil, fmt.Errorf("Copy Data send failed: %w", err)
 				}
 			}
@@ -362,7 +361,6 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 				break
 			}
 			if err != nil {
-				queryCtxt.ongoingCopyQuery = false
 				if _, err := io.Copy(ctx.ServerConn, (&message.CopyFail{
 					ErrorMessage: err.Error(),
 				}).Reader()); err != nil {
@@ -372,19 +370,16 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 			}
 		}
 		if _, err := io.Copy(ctx.ServerConn, message.ReadCopyDone([]byte{}).Reader()); err != nil {
-			queryCtxt.ongoingCopyQuery = false
 			return nil, fmt.Errorf("Copy Done send failed: %w", err)
 		}
 		if queryCtxt.prepared {
 			if _, err := io.Copy(ctx.ServerConn, message.ReadSync([]byte{}).Reader()); err != nil {
-				queryCtxt.ongoingCopyQuery = false
 				return nil, fmt.Errorf("Sync send failed: %w", err)
 			}
 		}
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
-		queryCtxt.ongoingCopyQuery = false
 		return msg, proxy.ErrSkipMsg
 	}
 	return msg, nil
@@ -395,13 +390,13 @@ func (instance *ProxyInstance) handleCopyOutResponse(ctx *proxy.Ctx, msg *messag
 	if queryCtxt == nil {
 		return msg, nil
 	}
+	queryCtxt.ongoingCopyQuery = false
 	if queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
 		f, err := os.Create(queryCtxt.Query.LocalCopy)
 		if err != nil {
-			queryCtxt.ongoingCopyQuery = false
 			return msg, err
 		}
 		defer f.Close()
@@ -415,13 +410,11 @@ func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyD
 	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
 		f, err := os.OpenFile(queryCtxt.Query.LocalCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			queryCtxt.ongoingCopyQuery = false
 			return msg, err
 		}
 		defer f.Close()
 		_, err = io.Copy(f, bytes.NewReader(msg.Data))
 		if err != nil {
-			queryCtxt.ongoingCopyQuery = false
 			return msg, err
 		}
 		return msg, proxy.ErrSkipMsg
@@ -432,7 +425,6 @@ func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyD
 func (instance *ProxyInstance) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
 	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt != nil && queryCtxt.Query != nil && queryCtxt.Query.LocalCopy != "" {
-		queryCtxt.ongoingCopyQuery = false
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
 			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.Query.LocalCopy)
 		}
