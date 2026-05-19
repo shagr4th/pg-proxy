@@ -269,6 +269,15 @@ func (instance *ProxyInstance) handleTerminate(ctx *proxy.Ctx, msg *message.Term
 	if instance.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("INFO  [%s] Client sent termination\n", queryCtxt.ClientInfo)
 	}
+	if queryCtxt != nil && queryCtxt.ongoingCopyQuery {
+		queryCtxt.Error = "Client sent termination during copy"
+		queryCtxt.ongoingCopyQuery = false
+		if _, err := io.Copy(ctx.ServerConn, (&message.CopyFail{
+			ErrorMessage: queryCtxt.Error,
+		}).Reader()); err != nil {
+			return nil, fmt.Errorf("Copy Fail write failed: %w", err)
+		}
+	}
 	instance.traceQuery(ctx)
 	return msg, nil
 }

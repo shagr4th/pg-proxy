@@ -138,8 +138,6 @@ func TestTranslations(t *testing.T) {
 		}
 
 		sqlutils.AssertSqlExec(t, db, true, "", 0)
-		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS tax_detailtax", 0)
-		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS tax_regrouprc_eclate", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
