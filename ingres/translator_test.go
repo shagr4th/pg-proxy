@@ -138,11 +138,13 @@ func TestTranslations(t *testing.T) {
 		}
 
 		sqlutils.AssertSqlExec(t, db, true, "", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS tax_detailtax", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS tax_regrouprc_eclate", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE INDEX INDEX1 ON TABLE1 (COLUMN1) with structure = isam, fillfactor = 80, location = (ii_commercial)", 0)
-		sqlutils.AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10)) with nojournaling", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10), COLUMN1 TEXT) with nojournaling", 0)
 		sqlutils.AssertSqlExec(t, db, false, "create temporary table TABLE3 (COLUMN2 CHAR(10));SET pg.testvar = 1; create temporary table TABLE4 (COLUMN2 VARCHAR(10));", 0)
 
 		sqlutils.AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
@@ -261,7 +263,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertEquals(t, false, parsed.Transformed, testQuery)
 
 		sqlutils.AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM TABLE2 SET COLUMN1 = charextract(TABLE2.COLUMN2, 2)", 1)
-		sqlutils.AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM TABLE2 SET COLUMN1 = '1' WHERE COLUMN1 = 'u'", 1)
+		sqlutils.AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM TABLE2 SET TABLE1.COLUMN1 = char(LENGTH(TABLE1.COLUMN1)), TABLE1.heuremaj = '000000' WHERE TABLE1.COLUMN1 = 'u'", 1)
 		sqlutils.AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM (SELECT $1 AS CC) AS T SET COLUMN1 = charextract(T.CC, $2)", 1, "ABC", 3)
 		sqlutils.AssertSqlQuery(t, db, "SELECT COLUMN1 FROM TABLE1 LIMIT 1", []string{"C"})
 		sqlutils.AssertSqlExec(t, db, true, "UPDATE TABLE1 FROM (SELECT ? AS CC) AS T SET COLUMN1 =? + charextract(T.CC, ?)", 1, "ABC", "X", 3) // test inversion ordre des param placeholder

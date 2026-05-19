@@ -209,12 +209,18 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *s
 			}
 			if tableName != nil {
 				current := SET.Next
+				leftMember := true
 				for {
 					if current == nil || current == WHERE || current == FROM {
 						break
 					}
-					if current.StartsWith(tableName.Value + ".") {
+					if leftMember && current.StartsWith(tableName.Value+".") {
 						current.SetValue(current.Value[len(tableName.Value)+1:])
+					}
+					if current.EqualFold(",") && current.Enclosing == SET.Enclosing {
+						leftMember = true
+					} else if current.EqualFold("=") && current.Enclosing == SET.Enclosing {
+						leftMember = false
 					}
 					current = current.Next
 				}
