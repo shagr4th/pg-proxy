@@ -298,7 +298,7 @@ const webUIHTML = `<!DOCTYPE html>
       '<td class="time">' + formatTime(rec.time) + '</td>' +
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
-      '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
+      '<td class="sql translated">' + (rec.final ? highlight(rec.final + (rec.copy ? (' --local copy filename: ' + rec.copy) : ''), filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
       '<td class="time">' + rec.results + ' in ' + rec.duration + ' ms</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;

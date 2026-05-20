@@ -457,12 +457,17 @@ func DoExec(db dbExecutor, prepare bool, query string, args ...any) (sql.Result,
 	return res, err
 }
 
-func DoQuery[K comparable](db dbExecutor, query string, args ...any) ([]*K, error) {
+func DoPrepare[K comparable](db dbExecutor, query string, args ...any) ([]*K, error) {
 	stmt, err := db.Prepare(query)
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
+	results, err := DoQuery[K](stmt, args...)
+	return results, err
+}
+
+func DoQuery[K comparable](stmt *sql.Stmt, args ...any) ([]*K, error) {
 	rows, err := stmt.Query(args...)
 	if err != nil {
 		return nil, err
@@ -473,6 +478,9 @@ func DoQuery[K comparable](db dbExecutor, query string, args ...any) ([]*K, erro
 	for rows.Next() {
 		var res K
 		err = rows.Scan(&res)
+		if err != nil {
+			break
+		}
 		results = append(results, &res)
 	}
 	return results, err
@@ -501,7 +509,7 @@ func AssertEquals[K comparable](t HasErrorf, expected K, got K, args ...string) 
 }
 
 func AssertSqlRowCount[K comparable](t HasErrorf, db dbExecutor, query string, expectedRowCount int, args ...any) []*K {
-	results, err := DoQuery[K](db, query, args...)
+	results, err := DoPrepare[K](db, query, args...)
 	AssertNoError(t, err, query)
 	AssertEquals(t, expectedRowCount, len(results), query)
 	return results

@@ -128,7 +128,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlQuery(t, db, "SELECT 'a' + ?1", []string{"ab"}, "b")
 		sqlutils.AssertSqlQuery(t, db, "SELECT 'a' + @1", []string{"ab"}, "b")
 		sqlutils.AssertSqlQuery(t, db, "SELECT 'a' + :1", []string{"ab"}, "b")
-		_, err = sqlutils.DoQuery[string](db, "SELECT 'a' + :name", sql.Named("name", "b"))
+		_, err = sqlutils.DoPrepare[string](db, "SELECT 'a' + :name", sql.Named("name", "b"))
 		if err == nil || !strings.Contains(err.Error(), `pg-proxy error: named parameter 'name' not supported in postgres: strconv.Atoi: parsing "name": invalid syntax`) {
 			t.Error("Unexpected nil or wrong error for SELECT 'a' + :name", err)
 		}
@@ -140,9 +140,11 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlExec(t, db, true, "", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE1", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE2", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DROP TABLE IF EXISTS TABLE3", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE TABLE TABLE1 (COLUMN1 TEXT, heuremaj CHAR(6)) WITH NORECOVERY", 0)
 		sqlutils.AssertSqlExec(t, db, true, "CREATE INDEX INDEX1 ON TABLE1 (COLUMN1) with structure = isam, fillfactor = 80, location = (ii_commercial)", 0)
 		sqlutils.AssertSqlExec(t, db, true, "DECLARE TABLE TABLE2 (COLUMN2 CHAR(10), COLUMN1 TEXT) with nojournaling", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DECLARE TABLE TABLE3 (COLUMN2 CHAR(10), COLUMN1 TEXT) with nojournaling", 0)
 		sqlutils.AssertSqlExec(t, db, false, "create temporary table TABLE3 (COLUMN2 CHAR(10));SET pg.testvar = 1; create temporary table TABLE4 (COLUMN2 VARCHAR(10));", 0)
 
 		sqlutils.AssertSqlQuery(t, db, "SELECT char($1)", []string{"A"}, "A")
@@ -244,7 +246,7 @@ func TestTranslations(t *testing.T) {
 			t.Errorf("unexpected error while simulating copy fail mechanism")
 		}
 
-		sqlutils.AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"index1", "table1", "table2"})
+		sqlutils.AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"index1", "table1", "table2", "table3"})
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) + '-' + upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY-DUMMYDUMMY"})
@@ -451,20 +453,42 @@ func TestTranslations(t *testing.T) {
 			res, err := stmt.Exec(TestCopyFile) // 1ère exécution
 			rowsAffected, err := res.RowsAffected()
 
-			tempStmt, err := tx.Prepare("Set lockmode session where readlock=nolock") // simulation de destruction d'un context de requête
+			stmt2, err := tx.Prepare("Set lockmode session where readlock=nolock") // simulation de destruction d'un context de requête
 			sqlutils.AssertNoError(t, err)
-			defer tempStmt.Close()
-			res, err = tempStmt.Exec()
+			defer stmt2.Close()
+			res, err = stmt2.Exec()
 			sqlutils.AssertNoError(t, err)
-			rowsAffected, err = res.RowsAffected()
 
+			stmt3, err := tx.Prepare("COPY TABLE3 FROM $1")
+			sqlutils.AssertNoError(t, err)
+			defer stmt3.Close()
+			res, err = stmt3.Exec(TestCopyFile)
+			rowsAffected, err = res.RowsAffected()
+			sqlutils.AssertEquals(t, size, rowsAffected)
+
+			// 2ème exécution et réutilisation des prepared statements
 			err = os.Remove(TestCopyFile)
 			sqlutils.AssertNoError(t, err)
-			res, err = stmt.Exec(TestCopyFile) // 2ème exécution
+			res, err = stmt.Exec(TestCopyFile)
 			_, err = os.Stat(TestCopyFile)
 			sqlutils.AssertNoError(t, err)
 			rowsAffected, err = res.RowsAffected()
 			sqlutils.AssertEquals(t, size, rowsAffected)
+			res, err = stmt2.Exec()
+			sqlutils.AssertNoError(t, err)
+
+			stmt25, err := tx.Prepare("SELECT COUNT(*) FROM TABLE3")
+			sqlutils.AssertNoError(t, err)
+			defer stmt25.Close()
+			intres, err := sqlutils.DoQuery[int64](stmt25)
+			sqlutils.AssertNoError(t, err)
+			sqlutils.AssertEquals(t, size, *(intres[0]))
+
+			res, err = stmt3.Exec(TestCopyFile)
+			rowsAffected, err = res.RowsAffected()
+			intres, err = sqlutils.DoQuery[int64](stmt25)
+			sqlutils.AssertNoError(t, err)
+			sqlutils.AssertEquals(t, size*2, *(intres[0])) // on a exécuté 2 fois un COPY FROM sur la table, donc double de résultats
 
 			os.Remove(TestCopyFile + "2")
 			res, err = stmt.Exec(TestCopyFile + "2") // 3ème exécution avec autre nom de fichier bindé
@@ -481,7 +505,7 @@ func TestTranslations(t *testing.T) {
 			_, err = os.Stat(TestCopyFile)
 			sqlutils.AssertNoError(t, err)
 
-			sqlutils.AssertSqlExec(t, db, false, "truncate TABLE2 ", 0)
+			sqlutils.AssertSqlExec(t, db, false, "truncate TABLE2", 0)
 			tx, err = db.Begin()
 			sqlutils.AssertNoError(t, err)
 			sqlutils.AssertSqlExec(t, tx, true, "COPY TABLE2 FROM '"+TestCopyFile+"'", size)

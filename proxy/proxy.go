@@ -49,9 +49,9 @@ var _ backend.PGResolver = (*ProxyInstance)(nil)
 type QueryContext struct {
 	queryRecord
 
-	ongoingCopyQuery                 bool
-	prepared                         bool
-	preparedStatementTransformations map[string]queryTransformation
+	ongoingCopyQuery               bool
+	prepared                       bool
+	preparedStatementWithLocalCopy map[string]queryTransformation
 }
 
 func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -131,7 +131,7 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	if query.LocalCopy != "" {
 		queryCtxt.ongoingCopyQuery = true
 		if msg.PreparedStatementName != "" {
-			queryCtxt.preparedStatementTransformations[msg.PreparedStatementName] = queryTransformation{
+			queryCtxt.preparedStatementWithLocalCopy[msg.PreparedStatementName] = queryTransformation{
 				LocalCopy:   queryCtxt.LocalCopy,
 				OriginalSQL: queryCtxt.OriginalSQL,
 				FinalSQL:    queryCtxt.FinalSQL,
@@ -297,7 +297,7 @@ func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message
 			ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
 				ctx.ConnInfo.ClientAddress)),
 		},
-		preparedStatementTransformations: make(map[string]queryTransformation),
+		preparedStatementWithLocalCopy: make(map[string]queryTransformation),
 	}
 	err := instance.managePolyfills(ctx)
 	return msg, err
@@ -314,8 +314,8 @@ func (instance *ProxyInstance) handleParameterDescription(ctx *proxy.Ctx, msg *m
 func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
 	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt != nil && msg.PreparedStatementName != "" {
-		statementNamesLocalCopy, ok := queryCtxt.preparedStatementTransformations[msg.PreparedStatementName]
-		if ok && statementNamesLocalCopy.LocalCopy != "" && queryCtxt.LocalCopy != statementNamesLocalCopy.LocalCopy {
+		statementNamesLocalCopy, ok := queryCtxt.preparedStatementWithLocalCopy[msg.PreparedStatementName]
+		if ok && statementNamesLocalCopy.LocalCopy != "" {
 			// in case of an already binded/parsed query, we recall the original LocalCopy name,
 			// to inject it in the curent context
 			queryCtxt.Time = time.Now()
@@ -325,6 +325,7 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 			queryCtxt.Error = ""
 			queryCtxt.prepared = true
 			queryCtxt.ongoingCopyQuery = true
+			log.Printf("INFO  [%s] Apply cached prepared statement %s context. Local copy filename =  %s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, queryCtxt.LocalCopy)
 		}
 	}
 
