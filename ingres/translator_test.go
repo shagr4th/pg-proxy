@@ -465,6 +465,15 @@ func TestTranslations(t *testing.T) {
 			sqlutils.AssertNoError(t, err)
 			rowsAffected, err = res.RowsAffected()
 			sqlutils.AssertEquals(t, size, rowsAffected)
+
+			os.Remove(TestCopyFile + "2")
+			res, err = stmt.Exec(TestCopyFile + "2") // 3ème exécution avec autre nom de fichier bindé
+			tc2, err := os.Stat(TestCopyFile + "2")
+			sqlutils.AssertNoError(t, err)
+			sqlutils.AssertEquals(t, "pg-proxy.testcopy2", tc2.Name())
+			rowsAffected, err = res.RowsAffected()
+			sqlutils.AssertEquals(t, size, rowsAffected)
+
 			err = tx.Commit()
 			sqlutils.AssertNoError(t, err)
 
