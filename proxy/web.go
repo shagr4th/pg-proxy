@@ -11,15 +11,20 @@ import (
 
 const maxQueryBufferSize = 1000
 
+type queryTransformation struct {
+	OriginalSQL string `json:"original"`
+	FinalSQL    string `json:"final"` // empty when not transformed
+	LocalCopy   string `json:"copy"`
+}
+
 // queryRecord holds information about a single SQL query that passed through the proxy.
 type queryRecord struct {
-	Time        time.Time `json:"time"`
-	Results     int64     `json:"results"`
-	Duration    int64     `json:"duration"`
-	ClientInfo  string    `json:"client"`
-	OriginalSQL string    `json:"original"`
-	FinalSQL    string    `json:"final"` // empty when not transformed
-	Error       string    `json:"error"` // translation error, if any
+	queryTransformation
+	Time       time.Time `json:"time"`
+	Results    int64     `json:"results"`
+	Duration   int64     `json:"duration"`
+	ClientInfo string    `json:"client"`
+	Error      string    `json:"error"` // translation error, if any
 }
 
 // queryStore is a thread-safe fixed-size ring buffer of QueryRecords with SSE subscriber support.

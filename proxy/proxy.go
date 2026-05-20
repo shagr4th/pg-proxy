@@ -46,19 +46,12 @@ type ProxyInstance struct {
 var _ backend.PGStartupMessageRewriter = (*ProxyInstance)(nil)
 var _ backend.PGResolver = (*ProxyInstance)(nil)
 
-type PreparedStatementContext struct {
-	LocalCopy   string
-	OriginalSQL string
-	FinalSQL    string
-}
-
 type QueryContext struct {
 	queryRecord
 
-	localCopy              string
-	ongoingCopyQuery       bool
-	prepared               bool
-	preparedStatementCache map[string]PreparedStatementContext
+	ongoingCopyQuery                 bool
+	prepared                         bool
+	preparedStatementTransformations map[string]queryTransformation
 }
 
 func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -134,12 +127,12 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 		msg.ParameterIDs = []uint32{25}
 	}
 	queryCtxt.FinalSQL = query.Sql()
-	queryCtxt.localCopy = query.LocalCopy
+	queryCtxt.LocalCopy = query.LocalCopy
 	if query.LocalCopy != "" {
 		queryCtxt.ongoingCopyQuery = true
 		if msg.PreparedStatementName != "" {
-			queryCtxt.preparedStatementCache[msg.PreparedStatementName] = PreparedStatementContext{
-				LocalCopy:   queryCtxt.localCopy,
+			queryCtxt.preparedStatementTransformations[msg.PreparedStatementName] = queryTransformation{
+				LocalCopy:   queryCtxt.LocalCopy,
 				OriginalSQL: queryCtxt.OriginalSQL,
 				FinalSQL:    queryCtxt.FinalSQL,
 			}
@@ -304,7 +297,7 @@ func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message
 			ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
 				ctx.ConnInfo.ClientAddress)),
 		},
-		preparedStatementCache: make(map[string]PreparedStatementContext),
+		preparedStatementTransformations: make(map[string]queryTransformation),
 	}
 	err := instance.managePolyfills(ctx)
 	return msg, err
@@ -312,7 +305,7 @@ func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message
 
 func (instance *ProxyInstance) handleParameterDescription(ctx *proxy.Ctx, msg *message.ParameterDescription) (*message.ParameterDescription, error) {
 	queryCtxt := instance.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.localCopy == "$1" && queryCtxt.prepared {
+	if queryCtxt != nil && queryCtxt.LocalCopy == "$1" && queryCtxt.prepared {
 		msg.ParameterIDs = []uint32{25} // OID TEXT
 	}
 	return msg, nil
@@ -321,12 +314,12 @@ func (instance *ProxyInstance) handleParameterDescription(ctx *proxy.Ctx, msg *m
 func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*message.Bind, error) {
 	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt != nil && msg.PreparedStatementName != "" {
-		statementNamesLocalCopy, ok := queryCtxt.preparedStatementCache[msg.PreparedStatementName]
-		if ok && statementNamesLocalCopy.LocalCopy != "" && queryCtxt.localCopy != statementNamesLocalCopy.LocalCopy {
+		statementNamesLocalCopy, ok := queryCtxt.preparedStatementTransformations[msg.PreparedStatementName]
+		if ok && statementNamesLocalCopy.LocalCopy != "" && queryCtxt.LocalCopy != statementNamesLocalCopy.LocalCopy {
 			// in case of an already binded/parsed query, we recall the original LocalCopy name,
 			// to inject it in the curent context
 			queryCtxt.Time = time.Now()
-			queryCtxt.localCopy = statementNamesLocalCopy.LocalCopy
+			queryCtxt.LocalCopy = statementNamesLocalCopy.LocalCopy
 			queryCtxt.OriginalSQL = statementNamesLocalCopy.OriginalSQL
 			queryCtxt.FinalSQL = statementNamesLocalCopy.FinalSQL
 			queryCtxt.Error = ""
@@ -335,9 +328,9 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 		}
 	}
 
-	if queryCtxt != nil && queryCtxt.localCopy == "$1" &&
+	if queryCtxt != nil && queryCtxt.LocalCopy == "$1" &&
 		queryCtxt.prepared && len(msg.ParameterValues) > 0 {
-		queryCtxt.localCopy = string(msg.ParameterValues[0].DataBytes())
+		queryCtxt.LocalCopy = string(msg.ParameterValues[0].DataBytes())
 	}
 	return msg, nil
 }
@@ -355,13 +348,13 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 		return msg, nil
 	}
 	queryCtxt.ongoingCopyQuery = false
-	if queryCtxt.localCopy != "" {
+	if queryCtxt.LocalCopy != "" {
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.localCopy)
+			log.Printf("INFO  [%s] Will copy from %s\n", queryCtxt.ClientInfo, queryCtxt.LocalCopy)
 		}
-		f, err := os.Open(queryCtxt.localCopy)
+		f, err := os.Open(queryCtxt.LocalCopy)
 		if err != nil {
-			log.Printf("ERROR [%s] %s, when opening %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.localCopy)
+			log.Printf("ERROR [%s] %s, when opening %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.LocalCopy)
 			if _, err := io.Copy(ctx.ServerConn, (&message.CopyFail{
 				ErrorMessage: err.Error(),
 			}).Reader()); err != nil {
@@ -375,7 +368,7 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 			n, err := f.Read(buf)
 			if n > 0 {
 				if instance.Verbose&4 == 4 {
-					log.Printf("INFO  [%s] Read %d bytes from %s\n", queryCtxt.ClientInfo, n, queryCtxt.localCopy)
+					log.Printf("INFO  [%s] Read %d bytes from %s\n", queryCtxt.ClientInfo, n, queryCtxt.LocalCopy)
 				}
 				chunk := buf[:n]
 				if _, err := io.Copy(ctx.ServerConn, message.ReadCopyData(chunk).Reader()); err != nil {
@@ -403,7 +396,7 @@ func (instance *ProxyInstance) handleCopyInResponse(ctx *proxy.Ctx, msg *message
 			}
 		}
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.localCopy)
+			log.Printf("INFO  [%s] Copy from %s done\n", queryCtxt.ClientInfo, queryCtxt.LocalCopy)
 		}
 		return msg, proxy.ErrSkipMsg
 	}
@@ -416,13 +409,13 @@ func (instance *ProxyInstance) handleCopyOutResponse(ctx *proxy.Ctx, msg *messag
 		return msg, nil
 	}
 	queryCtxt.ongoingCopyQuery = false
-	if queryCtxt.localCopy != "" {
+	if queryCtxt.LocalCopy != "" {
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.localCopy)
+			log.Printf("INFO  [%s] Will copy to %s\n", queryCtxt.ClientInfo, queryCtxt.LocalCopy)
 		}
-		f, err := os.Create(queryCtxt.localCopy)
+		f, err := os.Create(queryCtxt.LocalCopy)
 		if err != nil {
-			log.Printf("ERROR [%s] %s, when creating %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.localCopy)
+			log.Printf("ERROR [%s] %s, when creating %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.LocalCopy)
 			return msg, err
 		}
 		defer f.Close()
@@ -433,16 +426,16 @@ func (instance *ProxyInstance) handleCopyOutResponse(ctx *proxy.Ctx, msg *messag
 
 func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyData) (*message.CopyData, error) {
 	queryCtxt := instance.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.localCopy != "" {
-		f, err := os.OpenFile(queryCtxt.localCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if queryCtxt != nil && queryCtxt.LocalCopy != "" {
+		f, err := os.OpenFile(queryCtxt.LocalCopy, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Printf("ERROR [%s] %s, when opening %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.localCopy)
+			log.Printf("ERROR [%s] %s, when opening %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.LocalCopy)
 			return msg, err
 		}
 		defer f.Close()
 		_, err = io.Copy(f, bytes.NewReader(msg.Data))
 		if err != nil {
-			log.Printf("ERROR [%s] %s, when writing %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.localCopy)
+			log.Printf("ERROR [%s] %s, when writing %s\n", queryCtxt.ClientInfo, err.Error(), queryCtxt.LocalCopy)
 			return msg, err
 		}
 		return msg, proxy.ErrSkipMsg
@@ -452,9 +445,9 @@ func (instance *ProxyInstance) handleCopyData(ctx *proxy.Ctx, msg *message.CopyD
 
 func (instance *ProxyInstance) handleCopyDone(ctx *proxy.Ctx, msg *message.CopyDone) (*message.CopyDone, error) {
 	queryCtxt := instance.getQueryContext(ctx)
-	if queryCtxt != nil && queryCtxt.localCopy != "" {
+	if queryCtxt != nil && queryCtxt.LocalCopy != "" {
 		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
-			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.localCopy)
+			log.Printf("INFO  [%s] Copy to %s done\n", queryCtxt.ClientInfo, queryCtxt.LocalCopy)
 		}
 		return msg, proxy.ErrSkipMsg
 	}
