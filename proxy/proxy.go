@@ -325,7 +325,9 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 			queryCtxt.Error = ""
 			queryCtxt.prepared = true
 			queryCtxt.ongoingCopyQuery = true
-			log.Printf("INFO  [%s] Apply cached prepared statement %s context. Local copy filename =  %s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, queryCtxt.LocalCopy)
+			if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+				log.Printf("INFO  [%s] Apply cached prepared statement %s context. Local copy filename =  %s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, queryCtxt.LocalCopy)
+			}
 		}
 	}
 
