@@ -364,6 +364,24 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 		}
 	}
 
+	if len(msg.ParameterValues) > 0 && (instance.Verbose&2 == 2 || instance.Verbose&4 == 4) && queryCtxt.OriginalSQL != "" {
+		query := queryCtxt.OriginalSQL
+		if queryCtxt.FinalSQL != "" {
+			query = fmt.Sprintf("%s {original: %s}", queryCtxt.FinalSQL, queryCtxt.OriginalSQL)
+		}
+		args := strings.Builder{}
+		for i, v := range msg.ParameterValues {
+			val := ""
+			if v.DataLength() == uint32(4294967295) {
+				val = "<NULL>"
+			} else {
+				val = string(v.DataBytes())
+			}
+			fmt.Fprintf(&args, "$%d = %s\n", i+1, val)
+		}
+		log.Printf("INFO  [%s] Binding prepared statement %s\nSQL = %s\n%s", queryCtxt.ClientInfo, msg.PreparedStatementName, query, args.String())
+	}
+
 	if queryCtxt != nil && queryCtxt.LocalCopy == "$1" &&
 		queryCtxt.prepared && len(msg.ParameterValues) > 0 {
 		queryCtxt.LocalCopy = string(msg.ParameterValues[0].DataBytes())
