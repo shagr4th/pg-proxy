@@ -10,7 +10,3 @@ run:
 
 build:
 	@go build -ldflags="-X main.commit=$(COMMIT_SHA)"
-
-load-test:
-	@go test -tags load -v -count=1 -timeout 120s ./ingres/ -run TestLoad
-

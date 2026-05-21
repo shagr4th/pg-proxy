@@ -1,5 +1,3 @@
-//go:build load
-
 package ingres
 
 import (
@@ -11,10 +9,11 @@ import (
 	"testing"
 	"time"
 
-	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"schenker/pg-proxy/proxy"
 	"schenker/pg-proxy/sqlutils"
+
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const loadProxyPort = 5440
@@ -93,9 +92,9 @@ func TestLoad_ConnectionChurn(t *testing.T) {
 	postgres := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
 			Version(embeddedpostgres.V17).
-			BinariesPath(pgPath+"/extracted").
-			RuntimePath(pgPath+"/runtime").
-			DataPath(pgPath+"/data").
+			BinariesPath(pgPath + "/extracted").
+			RuntimePath(pgPath + "/runtime").
+			DataPath(pgPath + "/data").
 			CachePath(pgPath).
 			Encoding("UTF8").
 			Logger(nil).

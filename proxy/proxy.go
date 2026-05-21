@@ -54,6 +54,16 @@ type QueryContext struct {
 	preparedStatementWithLocalCopy map[string]queryTransformation
 }
 
+func (instance *ProxyInstance) cleanPreparedStatementCache(queryCtxt *QueryContext, name string) {
+	_, ok := queryCtxt.preparedStatementWithLocalCopy[name]
+	if ok {
+		delete(queryCtxt.preparedStatementWithLocalCopy, name)
+		if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+			log.Printf("INFO  [%s] Removed cached prepared statement %s context\n", queryCtxt.ClientInfo, name)
+		}
+	}
+}
+
 func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
 	remote, ok := parameters["proxy.remote"]
 	if ok && remote != "" {
@@ -102,6 +112,17 @@ func (instance *ProxyInstance) handleConnError(err error, ctx *proxy.Ctx, conn n
 	}
 }
 
+func (instance *ProxyInstance) handleClose(ctx *proxy.Ctx, msg *message.Close) (*message.Close, error) {
+	queryCtxt := instance.getQueryContext(ctx)
+	if queryCtxt == nil {
+		return msg, nil
+	}
+	if msg.TargetType == 'S' && msg.TargetName != "" {
+		instance.cleanPreparedStatementCache(queryCtxt, msg.TargetName)
+	}
+	return msg, nil
+}
+
 func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (parse *message.Parse, e error) {
 	queryCtxt := instance.getQueryContext(ctx)
 	if queryCtxt == nil {
@@ -116,12 +137,21 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	queryCtxt.FinalSQL = ""
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
-	var err error
 	query, err := instance.Translate(msg.QueryString)
 	if err != nil {
 		queryCtxt.Error = err.Error()
 	}
-	if query == nil || !query.Transformed {
+	if query == nil {
+		return msg, nil
+	} else {
+		command := query.First()
+		if command != nil && command.EqualFold("DEALLOCATE") && command.Next != nil {
+			statementName := strings.TrimSuffix(strings.TrimPrefix(command.Next.Value, "\""), "\"")
+			instance.cleanPreparedStatementCache(queryCtxt, statementName)
+		}
+	}
+
+	if !query.Transformed {
 		return msg, nil
 	} else if query.LocalCopy == "$1" {
 		msg.ParameterIDs = []uint32{25}
@@ -135,6 +165,9 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 				LocalCopy:   queryCtxt.LocalCopy,
 				OriginalSQL: queryCtxt.OriginalSQL,
 				FinalSQL:    queryCtxt.FinalSQL,
+			}
+			if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
+				log.Printf("INFO  [%s] Added cached prepared statement %s context. Local copy filename =  %s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, queryCtxt.LocalCopy)
 			}
 		}
 	}
@@ -570,6 +603,7 @@ func (instance *ProxyInstance) NewServer() (*proxy.Server, error) {
 
 	clientMessageHandlers.AddHandleQuery(instance.handleQuery)
 	clientMessageHandlers.AddHandleParse(instance.handleParse)
+	clientMessageHandlers.AddHandleClose(instance.handleClose)
 	clientMessageHandlers.AddHandleTerminate(instance.handleTerminate)
 	clientMessageHandlers.AddHandleBind(instance.handleBind)
 	serverMessageHandlers.AddHandleBackendKeyData(instance.handleBackendKeyData)
