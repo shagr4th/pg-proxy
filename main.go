@@ -13,6 +13,8 @@ import (
 	"schenker/pg-proxy/sqlite"
 	"syscall"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 var commit string
@@ -38,6 +40,7 @@ Commit: ` + commit)
 	var defaultClientParameters string
 	var webPort int
 	var webSecret string
+	var replayDir string
 	flag.StringVar(&instance.Host, "host", "", "Listener host (default all local interfaces)")
 	flag.IntVar(&instance.Port, "port", 5432, "Listener port")
 	flag.IntVar(&instance.Verbose, "verbose", 0, "Verbosity: 0 = none, 1 = connections, 2 = translated queries, 4 = all queries, 8 = protocol debug (default 0)")
@@ -49,6 +52,8 @@ Commit: ` + commit)
 	flag.StringVar(&defaultClientParameters, "parameters", "{}", "Default client parameters (without override of the client's ones), in JSON format")
 	flag.IntVar(&webPort, "web-port", 0, "Web UI port for query monitoring (0 = disabled)")
 	flag.StringVar(&webSecret, "web-secret", "", "Web UI secret (default none)")
+	flag.StringVar(&instance.RecordDir, "record", "", "Directory to record interactions into (one JSON file per connection)")
+	flag.StringVar(&replayDir, "replay", "", "Directory of recorded JSON files to replay through the proxy at startup")
 	flag.Parse()
 
 	switch translator {
@@ -82,6 +87,22 @@ Commit: ` + commit)
 	}
 	log.Printf("[Listening on %s:%d with %s translator] "+banner, instance.Host, instance.Port, translator)
 	go server.Serve(ln)
+
+	if replayDir != "" {
+		replayUser := "postgres"
+		replayPassword := ""
+		replayDatabase := "postgres"
+		if instance.DefaultClientParameters != nil {
+			if v, ok := instance.DefaultClientParameters["user"]; ok {
+				replayUser = v
+			}
+		}
+		proxyAddr := fmt.Sprintf("%s:%d", instance.Host, instance.Port)
+		if instance.Host == "" {
+			proxyAddr = fmt.Sprintf("localhost:%d", instance.Port)
+		}
+		go proxy.ReplayDir(replayDir, proxyAddr, replayUser, replayPassword, replayDatabase)
+	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

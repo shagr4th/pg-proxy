@@ -37,6 +37,7 @@ type ProxyInstance struct {
 	Verbose                 int
 	KeepOriginal            bool
 	DefaultClientParameters map[string]string
+	RecordDir               string
 	sqlutils.Translator
 
 	queryStore   *queryStore
@@ -52,6 +53,7 @@ type QueryContext struct {
 	ongoingCopyQuery               bool
 	prepared                       bool
 	preparedStatementWithLocalCopy map[string]queryTransformation
+	recorder                       *Recorder
 }
 
 func (instance *ProxyInstance) GetPGConn(ctx context.Context, clientAddr net.Addr, parameters map[string]string) (net.Conn, error) {
@@ -99,6 +101,9 @@ func (instance *ProxyInstance) handleConnError(err error, ctx *proxy.Ctx, conn n
 	queryCtxt := instance.getQueryContext(ctx)
 	if err != io.EOF && instance.Verbose&1 == 1 && queryCtxt != nil {
 		log.Printf("WARN  [%s] Connection error : %v", queryCtxt.ClientInfo, err)
+	}
+	if queryCtxt != nil {
+		queryCtxt.recorder.Close()
 	}
 }
 
@@ -150,6 +155,7 @@ func (instance *ProxyInstance) handleQuery(ctx *proxy.Ctx, msg *message.Query) (
 	if queryCtxt == nil {
 		return msg, nil
 	}
+	original := msg.QueryString
 	parseMsg, _ := instance.handleParse(ctx, &message.Parse{
 		QueryString: msg.QueryString,
 	})
@@ -157,6 +163,7 @@ func (instance *ProxyInstance) handleQuery(ctx *proxy.Ctx, msg *message.Query) (
 	if parseMsg != nil {
 		msg.QueryString = parseMsg.QueryString
 	}
+	queryCtxt.recorder.AddSimple(original)
 	return msg, nil
 }
 
@@ -280,6 +287,9 @@ func (instance *ProxyInstance) handleTerminate(ctx *proxy.Ctx, msg *message.Term
 		log.Printf("INFO  [%s] Client sent termination\n", queryCtxt.ClientInfo)
 	}
 	instance.traceQuery(ctx)
+	if queryCtxt != nil {
+		queryCtxt.recorder.Close()
+	}
 	return msg, nil
 }
 
@@ -292,13 +302,20 @@ func (instance *ProxyInstance) handleAuthenticationOk(ctx *proxy.Ctx, msg *messa
 }
 
 func (instance *ProxyInstance) handleBackendKeyData(ctx *proxy.Ctx, msg *message.BackendKeyData) (*message.BackendKeyData, error) {
-	ctx.QueryContext = &QueryContext{
+	clientInfo := fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
+		ctx.ConnInfo.ClientAddress))
+	qctx := &QueryContext{
 		queryRecord: queryRecord{
-			ClientInfo: fmt.Sprintf("%-6d %-40s", msg.ProcessID, fmt.Sprintf("%v (%v)", ctx.ConnInfo.StartupParameters["user"],
-				ctx.ConnInfo.ClientAddress)),
+			ClientInfo: clientInfo,
 		},
 		preparedStatementWithLocalCopy: make(map[string]queryTransformation),
 	}
+	if instance.RecordDir != "" {
+		rec := NewRecorder(instance.RecordDir)
+		rec.SetMeta(clientInfo, msg.ProcessID, ctx.ConnInfo.StartupParameters)
+		qctx.recorder = rec
+	}
+	ctx.QueryContext = qctx
 	err := instance.managePolyfills(ctx)
 	return msg, err
 }
@@ -334,6 +351,13 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 	if queryCtxt != nil && queryCtxt.LocalCopy == "$1" &&
 		queryCtxt.prepared && len(msg.ParameterValues) > 0 {
 		queryCtxt.LocalCopy = string(msg.ParameterValues[0].DataBytes())
+	}
+	if queryCtxt != nil && queryCtxt.OriginalSQL != "" {
+		params := make([]string, len(msg.ParameterValues))
+		for i, v := range msg.ParameterValues {
+			params[i] = string(v.DataBytes())
+		}
+		queryCtxt.recorder.AddExtended(queryCtxt.OriginalSQL, msg.PreparedStatementName, params)
 	}
 	return msg, nil
 }
