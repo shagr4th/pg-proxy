@@ -235,7 +235,7 @@ const webUIHTML = `<!DOCTYPE html>
   td { padding: 6px 10px; vertical-align: top; overflow: hidden; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
   td.time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   td.client { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  td.sql { color: var(--text); white-space: pre; }
+  td.sql { color: var(--text); white-space: pre-line; }
   td.sql .translated { color: var(--yellow); }
   #empty { text-align: center; color: var(--text-dim); padding: 60px; font-size: 14px; }
   mark { background: var(--accent-dim); color: var(--accent); border-radius: 2px; }
