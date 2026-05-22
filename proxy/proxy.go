@@ -184,7 +184,7 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 }
 
 func (instance *ProxyInstance) emitStarted(queryCtxt *QueryContext) {
-	if instance.queryStore == nil || queryCtxt.startedEmitted || queryCtxt.ongoingCopyQuery {
+	if instance.queryStore == nil || queryCtxt.startedEmitted || queryCtxt.ongoingCopyQuery || queryCtxt.OriginalSQL == "" {
 		return
 	}
 	queryCtxt.ID = instance.queryStore.nextID()

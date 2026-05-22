@@ -6,7 +6,7 @@ test:
 	@go test -p 1 ./... -v
 
 run:
-	@go run main.go proxy.go translator_base.go translator_ingres.go web.go
+	@go run .
 
 build:
 	@go build -ldflags="-X main.commit=$(COMMIT_SHA)"
