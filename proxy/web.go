@@ -322,7 +322,7 @@ const webUIHTML = `<!DOCTYPE html>
     tr.innerHTML =
       '<td class="time">' + formatTime(rec.time) + '</td>' +
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
-      '<td class="sql">' + highlight(rec.original, filterText) + rec.args + '</td>' +
+      '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
       '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
       '<td class="time">' + (pending ? '<span style="color:var(--text-dim)">…</span>' : rec.results + ' in ' + rec.duration + ' ms') + '</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
@@ -334,6 +334,9 @@ const webUIHTML = `<!DOCTYPE html>
     tr.classList.remove('error', 'transformed');
     if (rec.error) tr.classList.add('error');
     else if (rec.final) tr.classList.add('transformed');
+    if (rec.args) {
+      tr.cells[2].innerHTML = highlight(rec.original, filterText) + rec.args;
+    }
     tr.cells[4].innerHTML = rec.results + ' in ' + rec.duration + ' ms';
     tr.cells[5].innerHTML = rec.error ? highlight(rec.error, filterText) : '';
     tr.cells[5].title = rec.error || '';
