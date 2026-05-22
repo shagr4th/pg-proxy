@@ -14,6 +14,7 @@ const maxQueryBufferSize = 1000
 type queryTransformation struct {
 	OriginalSQL string `json:"original"`
 	FinalSQL    string `json:"final"` // empty when not transformed
+	Args        string `json:"args"`
 	LocalCopy   string `json:"copy"`
 }
 
@@ -234,7 +235,7 @@ const webUIHTML = `<!DOCTYPE html>
   td { padding: 6px 10px; vertical-align: top; overflow: hidden; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
   td.time { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
   td.client { color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  td.sql { color: var(--text); }
+  td.sql { color: var(--text); white-space: pre; }
   td.sql .translated { color: var(--yellow); }
   #empty { text-align: center; color: var(--text-dim); padding: 60px; font-size: 14px; }
   mark { background: var(--accent-dim); color: var(--accent); border-radius: 2px; }
@@ -321,8 +322,8 @@ const webUIHTML = `<!DOCTYPE html>
     tr.innerHTML =
       '<td class="time">' + formatTime(rec.time) + '</td>' +
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
-      '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
-      '<td class="sql translated">' + (rec.final ? highlight(rec.final + (rec.copy ? (' --local copy filename: ' + rec.copy) : ''), filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
+      '<td class="sql">' + highlight(rec.original, filterText) + rec.args + '</td>' +
+      '<td class="sql translated">' + (rec.final ? highlight(rec.final, filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
       '<td class="time">' + (pending ? '<span style="color:var(--text-dim)">…</span>' : rec.results + ' in ' + rec.duration + ' ms') + '</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;

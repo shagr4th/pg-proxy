@@ -396,9 +396,10 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 			} else {
 				val = string(v.DataBytes())
 			}
-			fmt.Fprintf(&args, "$%d = %s\n", i+1, val)
+			fmt.Fprintf(&args, "\n-- $%d = %s", i+1, val)
 		}
-		log.Printf("INFO  [%s] Binding prepared statement %s\nSQL = %s\n%s", queryCtxt.ClientInfo, msg.PreparedStatementName, query, args.String())
+		queryCtxt.Args = args.String()
+		log.Printf("INFO  [%s] Binding prepared statement %s\nSQL = %s%s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, query, queryCtxt.Args)
 	}
 
 	if queryCtxt != nil && queryCtxt.LocalCopy == "$1" &&
