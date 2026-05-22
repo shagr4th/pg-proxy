@@ -20,6 +20,8 @@ type queryTransformation struct {
 // queryRecord holds information about a single SQL query that passed through the proxy.
 type queryRecord struct {
 	queryTransformation
+	ID         uint64    `json:"id"`
+	EventType  string    `json:"event"` // "started" or "done"
 	Time       time.Time `json:"time"`
 	Results    int64     `json:"results"`
 	Duration   int64     `json:"duration"`
@@ -36,6 +38,16 @@ type queryStore struct {
 	count       int // number of valid entries (0..maxQueryBufferSize)
 	subscribers map[uint64]chan queryRecord
 	nextSubID   uint64
+	nextQueryID uint64
+}
+
+// nextID returns a new unique query ID.
+func (s *queryStore) nextID() uint64 {
+	s.mu.Lock()
+	id := s.nextQueryID
+	s.nextQueryID++
+	s.mu.Unlock()
+	return id
 }
 
 // add writes a record into the ring buffer (overwriting the oldest when full)
@@ -47,7 +59,6 @@ func (s *queryStore) add(r queryRecord) {
 	if s.count < maxQueryBufferSize {
 		s.count++
 	}
-	// Broadcast to subscribers (non-blocking)
 	for _, ch := range s.subscribers {
 		select {
 		case ch <- r:
@@ -55,6 +66,18 @@ func (s *queryStore) add(r queryRecord) {
 		}
 	}
 	s.mu.Unlock()
+}
+
+// broadcast sends a record to SSE subscribers without storing it in the ring buffer.
+func (s *queryStore) broadcast(r queryRecord) {
+	s.mu.RLock()
+	for _, ch := range s.subscribers {
+		select {
+		case ch <- r:
+		default:
+		}
+	}
+	s.mu.RUnlock()
 }
 
 // recent returns a copy of all buffered records in insertion order (oldest first).
@@ -288,20 +311,31 @@ const webUIHTML = `<!DOCTYPE html>
     if (rec.error) tr.classList.add('error');
     else if (rec.final) tr.classList.add('transformed');
     if (animate) tr.classList.add('new-row');
-    tr.dataset.id = rec.id;
+    tr.dataset.queryId = rec.id;
     tr.dataset.original = rec.original;
-    tr.dataset.final = rec.final;
+    tr.dataset.final = rec.final || '';
     tr.dataset.client = rec.client;
     tr.dataset.error = rec.error || '';
 
+    const pending = rec.event === 'started';
     tr.innerHTML =
       '<td class="time">' + formatTime(rec.time) + '</td>' +
       '<td class="client" title="' + esc(rec.client) + '">' + esc(rec.client) + '</td>' +
       '<td class="sql">' + highlight(rec.original, filterText) + '</td>' +
       '<td class="sql translated">' + (rec.final ? highlight(rec.final + (rec.copy ? (' --local copy filename: ' + rec.copy) : ''), filterText) : '<span style="color:var(--text-dim)">—</span>') + '</td>' +
-      '<td class="time">' + rec.results + ' in ' + rec.duration + ' ms</td>' +
+      '<td class="time">' + (pending ? '<span style="color:var(--text-dim)">…</span>' : rec.results + ' in ' + rec.duration + ' ms') + '</td>' +
       '<td class="err" title="' + esc(rec.error||'') + '">' + (rec.error ? highlight(rec.error, filterText) : '') + '</td>';
     return tr;
+  }
+
+  function updateRow(tr, rec) {
+    tr.dataset.error = rec.error || '';
+    tr.classList.remove('error', 'transformed');
+    if (rec.error) tr.classList.add('error');
+    else if (rec.final) tr.classList.add('transformed');
+    tr.cells[4].innerHTML = rec.results + ' in ' + rec.duration + ' ms';
+    tr.cells[5].innerHTML = rec.error ? highlight(rec.error, filterText) : '';
+    tr.cells[5].title = rec.error || '';
   }
 
   function applyFilter() {
@@ -311,7 +345,6 @@ const webUIHTML = `<!DOCTYPE html>
       const show = rowMatchesFilter(rec);
       tr.style.display = show ? '' : 'none';
       if (show) visible++;
-      // Re-highlight
       if (show && filterText) {
         tr.cells[2].innerHTML = highlight(rec.original, filterText);
         tr.cells[3].innerHTML = rec.final
@@ -323,11 +356,20 @@ const webUIHTML = `<!DOCTYPE html>
     counter.textContent = totalCount + ' queries' + (filterText ? ' (' + visible + ' shown)' : '');
   }
 
-  function addRecord(rec, animate) {
+  function handleRecord(rec, animate) {
+    // Try to find an existing row for this query ID (for "done" updates)
+    if (rec.event === 'done') {
+      const existing = tbody.querySelector('tr[data-query-id="' + rec.id + '"]');
+      if (existing) {
+        updateRow(existing, rec);
+        return;
+      }
+      // No matching row (e.g. backfill of done event) — fall through to insert
+    }
+
     totalCount++;
     empty.style.display = 'none';
 
-    // Prune oldest rows
     while (tbody.rows.length >= MAX_ROWS) {
       tbody.deleteRow(0);
     }
@@ -379,7 +421,7 @@ const webUIHTML = `<!DOCTYPE html>
     es.onmessage = function(e) {
       try {
         const rec = JSON.parse(e.data);
-        addRecord(rec, true);
+        handleRecord(rec, rec.event === 'started');
       } catch(err) {}
     };
 

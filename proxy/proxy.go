@@ -52,6 +52,7 @@ type QueryContext struct {
 	ongoingCopyQuery               bool
 	prepared                       bool
 	preparedStatementWithLocalCopy map[string]queryTransformation
+	startedEmitted                 bool // true after "started" event was broadcast
 }
 
 func (instance *ProxyInstance) cleanPreparedStatementCache(queryCtxt *QueryContext, name string) {
@@ -137,11 +138,13 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	queryCtxt.FinalSQL = ""
 	queryCtxt.prepared = true
 	queryCtxt.ongoingCopyQuery = false
+	queryCtxt.startedEmitted = false
 	query, err := instance.Translate(msg.QueryString)
 	if err != nil {
 		queryCtxt.Error = err.Error()
 	}
 	if query == nil {
+		instance.emitStarted(queryCtxt)
 		return msg, nil
 	} else {
 		command := query.First()
@@ -152,6 +155,7 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	}
 
 	if !query.Transformed {
+		instance.emitStarted(queryCtxt)
 		return msg, nil
 	} else if query.LocalCopy == "$1" {
 		msg.ParameterIDs = []uint32{25}
@@ -175,7 +179,19 @@ func (instance *ProxyInstance) handleParse(ctx *proxy.Ctx, msg *message.Parse) (
 	if instance.KeepOriginal {
 		msg.QueryString += " --translated from:\n-- " + strings.ReplaceAll(strings.ReplaceAll(queryCtxt.OriginalSQL, "\n", "\n-- "), "\r", "")
 	}
+	instance.emitStarted(queryCtxt)
 	return msg, nil
+}
+
+func (instance *ProxyInstance) emitStarted(queryCtxt *QueryContext) {
+	if instance.queryStore == nil || queryCtxt.startedEmitted || queryCtxt.ongoingCopyQuery {
+		return
+	}
+	queryCtxt.ID = instance.queryStore.nextID()
+	queryCtxt.startedEmitted = true
+	r := queryCtxt.queryRecord
+	r.EventType = "started"
+	instance.queryStore.broadcast(r)
 }
 
 func (instance *ProxyInstance) handleQuery(ctx *proxy.Ctx, msg *message.Query) (query *message.Query, e error) {
@@ -241,7 +257,9 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 	if queryCtxt.OriginalSQL != "" && !queryCtxt.ongoingCopyQuery {
 		queryCtxt.Duration = time.Since(queryCtxt.Time).Milliseconds()
 		if instance.queryStore != nil {
-			instance.queryStore.add(queryCtxt.queryRecord)
+			r := queryCtxt.queryRecord
+			r.EventType = "done"
+			instance.queryStore.add(r)
 		}
 		query := queryCtxt.OriginalSQL
 		if queryCtxt.FinalSQL != "" {
@@ -257,6 +275,7 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		queryCtxt.Results = 0
 		queryCtxt.OriginalSQL = ""
 		queryCtxt.FinalSQL = ""
+		queryCtxt.startedEmitted = false
 	}
 	queryCtxt.Error = ""
 }
