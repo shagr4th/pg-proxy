@@ -258,7 +258,7 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		queryCtxt.Duration = time.Since(queryCtxt.Time).Milliseconds()
 		if instance.queryStore != nil {
 			r := queryCtxt.queryRecord
-			r.EventType = "done"
+			r.EventType = "updated"
 			instance.queryStore.add(r)
 		}
 		query := queryCtxt.OriginalSQL
@@ -401,6 +401,11 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 			fmt.Fprintf(&args, "\n-- $%d = %s", i+1, val)
 		}
 		queryCtxt.Args = args.String()
+		if queryCtxt.Args != "" && instance.queryStore != nil {
+			r := queryCtxt.queryRecord
+			r.EventType = "updated"
+			instance.queryStore.add(r)
+		}
 		log.Printf("INFO  [%s] Binding prepared statement %s\nSQL = %s%s\n", queryCtxt.ClientInfo, msg.PreparedStatementName, query, queryCtxt.Args)
 	}
 

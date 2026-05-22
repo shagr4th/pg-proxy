@@ -22,7 +22,7 @@ type queryTransformation struct {
 type queryRecord struct {
 	queryTransformation
 	ID         uint64    `json:"id"`
-	EventType  string    `json:"event"` // "started" or "done"
+	EventType  string    `json:"event"` // "started" or "updated"
 	Time       time.Time `json:"time"`
 	Results    int64     `json:"results"`
 	Duration   int64     `json:"duration"`
@@ -358,14 +358,14 @@ const webUIHTML = `<!DOCTYPE html>
   }
 
   function handleRecord(rec, animate) {
-    // Try to find an existing row for this query ID (for "done" updates)
-    if (rec.event === 'done') {
+    // Try to find an existing row for this query ID
+    if (rec.event === 'updated') {
       const existing = tbody.querySelector('tr[data-query-id="' + rec.id + '"]');
       if (existing) {
         updateRow(existing, rec);
         return;
       }
-      // No matching row (e.g. backfill of done event) — fall through to insert
+      // No matching row (e.g. backfill of updated event) — fall through to insert
     }
 
     totalCount++;
