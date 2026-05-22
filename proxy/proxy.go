@@ -275,6 +275,7 @@ func (instance *ProxyInstance) traceQuery(ctx *proxy.Ctx) {
 		queryCtxt.Results = 0
 		queryCtxt.OriginalSQL = ""
 		queryCtxt.FinalSQL = ""
+		queryCtxt.Args = ""
 		queryCtxt.startedEmitted = false
 	}
 	queryCtxt.Error = ""
@@ -375,6 +376,7 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 			queryCtxt.OriginalSQL = statementNamesLocalCopy.OriginalSQL
 			queryCtxt.FinalSQL = statementNamesLocalCopy.FinalSQL
 			queryCtxt.Error = ""
+			queryCtxt.Args = ""
 			queryCtxt.prepared = true
 			queryCtxt.ongoingCopyQuery = true
 			if instance.Verbose&2 == 2 || instance.Verbose&4 == 4 {
