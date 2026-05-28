@@ -52,7 +52,7 @@ func (t *sqliteTranslator) Translate(query string) (*sqlutils.Query, error) {
 		return parsed, err
 	} else if first.EqualFold("DROP") {
 		objectToken := first.Next
-		if objectToken.EqualFold("VIEW") || objectToken.EqualFold("TABLE") {
+		if objectToken != nil && (objectToken.EqualFold("VIEW") || objectToken.EqualFold("TABLE")) {
 			objectToken.Last().Append(" ", "CASCADE")
 		}
 	}

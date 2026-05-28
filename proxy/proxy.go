@@ -385,7 +385,7 @@ func (instance *ProxyInstance) handleBind(ctx *proxy.Ctx, msg *message.Bind) (*m
 		}
 	}
 
-	if len(msg.ParameterValues) > 0 && (instance.Verbose&2 == 2 || instance.Verbose&4 == 4) && queryCtxt.OriginalSQL != "" {
+	if queryCtxt != nil && len(msg.ParameterValues) > 0 && (instance.Verbose&2 == 2 || instance.Verbose&4 == 4) && queryCtxt.OriginalSQL != "" {
 		query := queryCtxt.OriginalSQL
 		if queryCtxt.FinalSQL != "" {
 			query = fmt.Sprintf("%s {original: %s}", queryCtxt.FinalSQL, queryCtxt.OriginalSQL)

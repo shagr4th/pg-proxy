@@ -566,11 +566,15 @@ from information_schema.columns c)`)
 			}
 		} else if token.EqualFold("to_char") && len(enclosure.Heads) == 1 {
 			token.SetValue("")
-			enclosure.End.Append("::", "text")
+			if enclosure.End != nil {
+				enclosure.End.Append("::", "text")
+			}
 		} else if token.EqualFold("to_date") && len(enclosure.Heads) == 1 {
 			enclosure.Start.Append("regexp_replace", "(")
 			// ingres supports both formats: YYYY-MM-DD and MM/DD/YYYY (cause datestyle to iso,us)
-			enclosure.End.Prev.Append(",", "'(\\d\\d)/(\\d\\d)/(\\d\\d\\d\\d)'", ",", "'\\3-\\1-\\2'", ")", ",", " ", "'YYYY-MM-DD'")
+			if enclosure.End != nil && enclosure.End.Prev != nil {
+				enclosure.End.Prev.Append(",", "'(\\d\\d)/(\\d\\d)/(\\d\\d\\d\\d)'", ",", "'\\3-\\1-\\2'", ")", ",", " ", "'YYYY-MM-DD'")
+			}
 		} else if token.EqualFold("date_format") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Type == sqllexer.STRING {
 			token.SetValue("to_char")
 			// https://docs.actian.com/ingres/10s/index.html#page/SQLRef/Date_and_Time_Functions.htm
@@ -592,12 +596,14 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("date") && len(enclosure.Heads) == 1 {
 			/* PG ne garde pas les H:M:S avec date(""), mais dans ingres, date("2012-12-01 16:55:15") retourne un timestamp avec les H:M:S */
 			token.Cut(token.Next) // suppression token de fonction
-			if enclosure.Heads[0].EqualFold("'today'") || enclosure.Heads[0].EqualFold("sysdate") {
-				enclosure.End.Append("::", "date") // cas particulier ou c'est interprété comme une date et non un timestamp
-			} else if enclosure.Heads[0].EqualFold("'now'") {
-				enclosure.End.Append("::", "timestamptz") // cas particulier ou c'est interprété comme un timestamp avec timezone
-			} else {
-				enclosure.End.Append("::", "timestamp")
+			if enclosure.End != nil {
+				if enclosure.Heads[0].EqualFold("'today'") || enclosure.Heads[0].EqualFold("sysdate") {
+					enclosure.End.Append("::", "date") // cas particulier ou c'est interprété comme une date et non un timestamp
+				} else if enclosure.Heads[0].EqualFold("'now'") {
+					enclosure.End.Append("::", "timestamptz") // cas particulier ou c'est interprété comme un timestamp avec timezone
+				} else {
+					enclosure.End.Append("::", "timestamp")
+				}
 			}
 		} else if token.EqualFold("ifnull") {
 			token.SetValue("COALESCE")
@@ -642,8 +648,10 @@ from information_schema.columns c)`)
 			token.SetValue("COALESCE").Append("(", "NULLIF", "(", "position")
 			firstArg := enclosure.Heads[0].Cut(enclosure.Heads[1].Prev)
 			enclosure.Heads[1].Prev.Cut(enclosure.Heads[1])
-			enclosure.End.Prev.Append(" ", "in", " ").Paste(firstArg...)
-			enclosure.End.Append(",", "0", ")", ",", "length", "(").Paste(firstArg...).Append(")", "+", "1", ")")
+			if enclosure.End != nil && enclosure.End.Prev != nil {
+				enclosure.End.Prev.Append(" ", "in", " ").Paste(firstArg...)
+				enclosure.End.Append(",", "0", ")", ",", "length", "(").Paste(firstArg...).Append(")", "+", "1", ")")
+			}
 
 		} else if token.EqualFold("TIMESTAMPADD") && len(enclosure.Heads) == 3 {
 			token.Cut(token.Next) // suppression token de fonction
