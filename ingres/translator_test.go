@@ -228,7 +228,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlExec(t, db, false, "truncate TABLE1 ", 0)
 		sqlutils.AssertSqlExec(t, db, false, "COPY TABLE1 (jdev_grprix         =d1 ,dd                  ='d0:', COLUMN1 = char(05) colon with null('bouh'), column2 = d01, heuremaj = CHAR(6)) FROM '"+TestCopyFile+"'", 1)
 
-		sqlutils.AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(10), heuremaj) INTO '"+TestCopyFile+"'", 1)
+		sqlutils.AssertSqlExec(t, db, false, "COPY table TABLE1 (COLUMN1 = char(10), heuremaj, d0 = d0nl) INTO '"+TestCopyFile+"'", 1)
 		tmpTest, err = os.ReadFile(TestCopyFile)
 		sqlutils.AssertNoError(t, err)
 		sqlutils.AssertEquals(t, "dummy     100100\n", string(tmpTest), TestCopyFile)

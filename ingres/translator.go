@@ -746,7 +746,12 @@ from information_schema.columns c)`)
 					globalNull = columnWithNull
 				}
 				if columnDummy && endOfHead != nil {
-					enclosure.Heads[i].Cut(endOfHead.Next)
+					if i > 0 && i == len(enclosure.Heads)-1 {
+						// dernier argument, on enlève la virgule de fin en trop
+						enclosure.Heads[i].Prev.Cut(endOfHead)
+					} else {
+						enclosure.Heads[i].Cut(endOfHead.Next)
+					}
 				}
 			}
 			format := "csv"
