@@ -508,7 +508,7 @@ from information_schema.columns c)`)
 				castToType = "varchar"
 			}
 			isChar := strings.HasSuffix(castToType, "char")
-			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil && isChar {
+			if len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil && isChar && enclosure.End != nil {
 				// il y a une virgule, c'est un char(xxx, n) en mode longueur des 'n' premiers caractères
 				// on fait select char(XXX, 2) -> select (XXX)::char(2)
 				secondArg := enclosure.Heads[1].Prev.Cut(enclosure.End)
@@ -518,7 +518,7 @@ from information_schema.columns c)`)
 				token.SetValue(" ")
 				enclosure.End.Append("::", castToType, "(").Paste(secondArg...).Append(")")
 
-			} else if len(enclosure.Heads) == 1 {
+			} else if len(enclosure.Heads) == 1 && enclosure.End != nil {
 				afterEnclosure := enclosure.End.Next
 				if (token.Prev != nil && token.Prev.EqualFold("::")) ||
 					(lastDDLToken != nil && lastDDLToken.Index > token.Index && (afterEnclosure == nil || !afterEnclosure.EqualFold("AS"))) {
