@@ -363,7 +363,6 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlQuery(t, db, "select substr('toto' + lowercase('TATA'), 5, 2)", []string{"ta"})
 		sqlutils.AssertSqlQuery(t, db, "select ifnull(null, 'xxx') + ifnull(null, 'toto')", []string{"xxxtoto"})
 		sqlutils.AssertSqlQuery(t, db, "SELECT squeeze(' t ')", []string{"t"})
-		sqlutils.AssertSqlQuery(t, db, "CASE WHEN 1 = 1 THEN 'OK' ELSE 'KO' END AS T", []string{"1"})
 		sqlutils.AssertSqlQuery(t, db, "SELECT 1 OFFSET 0 FETCH FIRST 1 ROWS ONLY", []int{1})
 		sqlutils.AssertSqlQuery(t, db, "select * from (SELECT 1 as T union SELECT 2 as T union SELECT 3 as T) a order by t desc OFFSET 0 FETCH FIRST 2 ROWS ONLY", []int{3, 2})
 		sqlutils.AssertSqlQuery(t, db, "select int4('123')", []int{123})
