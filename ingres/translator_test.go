@@ -348,7 +348,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlExec(t, db, true, "create table test_table6 as select char('00        ') as prestation", 1)
 		sqlutils.AssertSqlExec(t, db, false, `SET lockmode session where readlock=nolock;create table trt_recepisse( societe bpchar(04) not null, rff varchar(35) not null default ' ')`, 0)
 		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE test_table6 as select societe, etat from test_table4 ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
-		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090 (ID_COTATION DECIMAL (8,0), DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
+		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090(ID_COTATION DECIMAL (8,0), DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
 		sqlutils.AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (ID_COTATION, DATE_MAJ) VALUES (5.6, date('now'))", 1)
 		testQuery = "select DATE_MAJ FROM session.sesstab1701270873090"
 		timeResults = sqlutils.AssertSqlRowCount[time.Time](t, db, testQuery, 1)

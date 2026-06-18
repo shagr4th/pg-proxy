@@ -484,8 +484,10 @@ from information_schema.columns c)`)
 			continue
 		}
 		enclosure := token.Next.Enclosing
-
-		if token.EqualFold("charextract") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
+		if token.StartsWith("session.") { // un create table session.xxx(column) peut être pris comme une fonction
+			token.SetValue(token.Value[8:])
+			continue
+		} else if token.EqualFold("charextract") && len(enclosure.Heads) == 2 && enclosure.Heads[1].Prev != nil {
 			// utilisation de substring a la place de charextract, avec format() pour émuler le blank padded avec un fixed char
 			// charextract(x, n) -> substring(format('%s', x), n, 1)
 			token.SetValue("substring")
