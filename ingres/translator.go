@@ -479,6 +479,9 @@ from information_schema.columns c)`)
 				}
 			}
 			continue
+		} else if token.EqualFold("NOT") && lastDDLToken != nil && lastDDLToken.Index > token.Index && token.Next != nil && token.Next.EqualFold("DEFAULT") {
+			// cas d'un create column avec l'instruction "not default", on supprime
+			token.Cut(token.Next.Next)
 		} else if token.Next == nil || token.Next.Enclosing == nil {
 			// ca n'est pas une fonction potentielle, or tout les checks suivants ne sont que des fonctions
 			continue

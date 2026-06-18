@@ -343,7 +343,7 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
 		sqlutils.AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
-		sqlutils.AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10))", 0)
+		sqlutils.AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10) not default)", 0)
 		sqlutils.AssertSqlExec(t, db, true, "create table test_table5 as select * from test_table4 with location = (ii_commercial), nojournaling", 0)
 		sqlutils.AssertSqlExec(t, db, true, "create table test_table6 as select char('00        ') as prestation", 1)
 		sqlutils.AssertSqlExec(t, db, false, `SET lockmode session where readlock=nolock;create table trt_recepisse( societe bpchar(04) not null, rff varchar(35) not null default ' ')`, 0)
