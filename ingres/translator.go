@@ -482,6 +482,39 @@ from information_schema.columns c)`)
 		} else if token.EqualFold("NOT") && lastDDLToken != nil && lastDDLToken.Index > token.Index && token.Next != nil && token.Next.EqualFold("DEFAULT") {
 			// cas d'un create column avec l'instruction "not default", on supprime
 			token.Cut(token.Next.Next)
+		} else if token.EqualFold("WITH") && lastDDLToken != nil && lastDDLToken.Index > token.Index && token.Next != nil && token.Next.Next != nil &&
+			token.Next.EqualFold("DEFAULT") && (token.Next.Next.EqualFold(",") || token.Next.Next.EqualFold(")")) {
+			// cas d'un create column avec l'instruction "with default",
+			// mais sans expression qui suit (d'ou le test d'égalité avec ',' ou ')' qui sont des tokens de fin de déclaration de colonnes ) :
+			// on force une expression '' ou 0 selon le type de la colonne
+			var searchForTypeToken = token.Prev
+			for { // on fait un retour en arrière pour récupérer un type de colonne connu
+				if searchForTypeToken == nil {
+					break
+				} else if searchForTypeToken.Enclosure == token.Enclosure && searchForTypeToken.EqualFold(",") {
+					// début de la déclaration de la colonne en cours, on arrête
+					break
+				} else if searchForTypeToken.Enclosing == token.Enclosure && searchForTypeToken.EqualFold("(") {
+					// début de la déclaration des colonnes, on arrête
+					break
+				} else if searchForTypeToken.EqualFold("char", "varchar", "vchar", "ingresdate") {
+					// an empty string for character columns, an empty string for Ingres date columns
+					token.Next.Append(" ", "''")
+					token.Cut(token.Next)
+					break
+				} else if searchForTypeToken.EqualFold("date", "ansidate") {
+					// the current date for ANSI date columns.
+					token.Next.Append(" ", "current_date")
+					token.Cut(token.Next) // on enlève le WITH
+					break
+				} else if searchForTypeToken.EqualFold("decimal", "money") {
+					// 0 for numeric and money columns
+					token.Next.Append(" ", "0")
+					token.Cut(token.Next) // on enlève le WITH
+					break
+				}
+				searchForTypeToken = searchForTypeToken.Prev
+			}
 		} else if token.Next == nil || token.Next.Enclosing == nil {
 			// ca n'est pas une fonction potentielle, or tout les checks suivants ne sont que des fonctions
 			continue

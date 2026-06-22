@@ -343,18 +343,22 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertEquals(t, "create temporary table session_tmp_param on commit preserve rows as select  (par.param2)::bpchar(2) as produit_taxation , substr(par.libre,1,2) as produit_facturation from jdev_param par where par.societe = $1 and par.param1 = 'VEN'", res.Sql(), testQuery)
 
 		sqlutils.AssertSqlExec(t, db, true, "Set lockmode session where readlock=nolock", 0)
-		sqlutils.AssertSqlExec(t, db, true, "create table test_table4 (etat char(10), societe char(10) not default)", 0)
+		sqlutils.AssertSqlExec(t, db, true, "create table test_table4 (etat char(10) with default, societe char(10) not default)", 0)
 		sqlutils.AssertSqlExec(t, db, true, "create table test_table5 as select * from test_table4 with location = (ii_commercial), nojournaling", 0)
 		sqlutils.AssertSqlExec(t, db, true, "create table test_table6 as select char('00        ') as prestation", 1)
 		sqlutils.AssertSqlExec(t, db, false, `SET lockmode session where readlock=nolock;create table trt_recepisse( societe bpchar(04) not null, rff varchar(35) not null default ' ')`, 0)
 		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE test_table6 as select societe, etat from test_table4 ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
-		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090(ID_COTATION DECIMAL (8,0), DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
-		sqlutils.AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (ID_COTATION, DATE_MAJ) VALUES (5.6, date('now'))", 1)
+		sqlutils.AssertSqlExec(t, db, true, "DECLARE GLOBAL TEMPORARY TABLE session.sesstab1701270873090(ID_COTATION DECIMAL (8,0) WITH DEFAULT, DATE_MAJ INGRESDATE) ON COMMIT PRESERVE ROWS WITH NORECOVERY", 0)
+		sqlutils.AssertSqlExec(t, db, true, "INSERT INTO session.sesstab1701270873090 (DATE_MAJ) VALUES (date('now'))", 1)
 		testQuery = "select DATE_MAJ FROM session.sesstab1701270873090"
 		timeResults = sqlutils.AssertSqlRowCount[time.Time](t, db, testQuery, 1)
 		if timeResults != nil {
 			math.Abs(float64(timeResults[0].Second()) - float64(time.Now().Second()))
 		}
+		testQuery = "select ID_COTATION FROM session.sesstab1701270873090"
+		decimalResults := sqlutils.AssertSqlRowCount[float64](t, db, testQuery, 1)
+		sqlutils.AssertEquals(t, 1, len(decimalResults))
+		sqlutils.AssertEquals(t, float64(0), *decimalResults[0])
 
 		sqlutils.AssertSqlExec(t, db, true, "update test_table4 h set h.etat = 'E' from session.test_table6 where h.societe = session.test_table6.societe", 0)
 		sqlutils.AssertSqlQuery(t, db, "select date_part('day', date(' 2023-01-25'))", []int64{25})
