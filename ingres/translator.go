@@ -507,7 +507,7 @@ from information_schema.columns c)`)
 					token.Next.Append(" ", "current_date")
 					token.Cut(token.Next) // on enlève le WITH
 					break
-				} else if searchForTypeToken.EqualFold("decimal", "money") {
+				} else if searchForTypeToken.EqualFold("decimal", "money", "integer", "smallint", "bigint") {
 					// 0 for numeric and money columns
 					token.Next.Append(" ", "0")
 					token.Cut(token.Next) // on enlève le WITH
