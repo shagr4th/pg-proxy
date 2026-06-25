@@ -248,6 +248,7 @@ func TestTranslations(t *testing.T) {
 
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"index1", "table1", "table2", "table3"})
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iicolumns where column_name = 'heuremaj' order by table_name", []string{"table1"})
+		sqlutils.AssertSqlQuery(t, db, "select column_name from iikey_columns where table_name = 'pg_aggregate'", []string{"aggfnoid"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1+COLUMN1) + '-' + upper(COLUMN1+COLUMN1) from TABLE1", []string{"DUMMYDUMMY-DUMMYDUMMY"})
 		sqlutils.AssertSqlQuery(t, db, "select upper(COLUMN1) + COLUMN1 from TABLE1", []string{"DUMMYdummy"})

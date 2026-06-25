@@ -16,6 +16,50 @@ type ingresTranslator struct {
 	polyfills           *sqlutils.Polyfills
 }
 
+const iitables = `(select t.table_name, t.table_schema as table_owner, null as create_date, null as alter_date,
+case t.table_type when 'VIEW' then 'V' else 'T' end as table_type,
+-1 as num_rows, -1 as number_pages, '' as location_name from information_schema.tables t
+union
+select i.indexname as table_name, i.schemaname as table_owner, null as create_date, null as alter_date,
+'I' as table_type, -1 as num_rows, -1 as number_pages, '' as location_name from pg_indexes i)`
+
+const iicolumns = `(SELECT
+    col.table_name::varchar(256)                       AS table_name,
+    col.table_schema::varchar(256)                     AS table_owner,
+    col.column_name::varchar(256)                      AS column_name,
+    col.data_type::varchar(32)                         AS column_datatype,
+    COALESCE(col.character_maximum_length,
+             col.numeric_precision, 0)::integer        AS column_length,
+    COALESCE(col.numeric_scale, 0)::integer            AS column_scale,
+    CASE WHEN col.is_nullable = 'YES'
+         THEN 'Y' ELSE 'N' END                         AS column_nulls,
+    CASE WHEN col.column_default IS NOT NULL
+         THEN 'Y' ELSE 'N' END                         AS column_defaults,
+    col.ordinal_position::integer                      AS column_sequence,
+    COALESCE(k.key_sequence, 0)::integer               AS key_sequence,
+    COALESCE(k.sort_direction, ' ')::char(1)           AS sort_direction
+FROM information_schema.columns col
+LEFT JOIN LATERAL (
+    SELECT
+        1+array_position(i.indkey::int[], a.attnum)                              AS key_sequence,
+        CASE WHEN (i.indoption[array_position(i.indkey::int[], a.attnum) - 1] & 1) = 1
+             THEN 'D' ELSE 'A' END                                             AS sort_direction
+    FROM pg_index i
+    JOIN pg_class       c ON c.oid = i.indrelid
+    JOIN pg_namespace   n ON n.oid = c.relnamespace
+    JOIN pg_attribute   a ON a.attrelid = c.oid AND a.attname = col.column_name
+    WHERE n.nspname = col.table_schema
+      AND c.relname = col.table_name
+      AND a.attnum  = ANY (i.indkey::int[])
+      -- pick ONE index to define the key: PK first, then any unique, then any
+      ORDER BY i.indisprimary DESC, i.indisunique DESC, i.indexrelid
+    LIMIT 1
+) k ON true
+ORDER BY table_name, table_owner, column_sequence)`
+
+const iikey_columns = `(SELECT table_name, table_owner, column_name, key_sequence, sort_direction
+FROM ` + iicolumns + `WHERE key_sequence > 0 ORDER BY table_name, table_owner, key_sequence)`
+
 func IngresTranslator(withStrictFixedChar bool) *ingresTranslator {
 	textNumericOperatorTemplate := `
 CREATE OR REPLACE FUNCTION public.add_{}_text ({}, text) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT RETURN $1 + $2::numeric;
@@ -359,17 +403,13 @@ func (v *ingresTranslator) singleQueryTranslate(parsed *sqlutils.Query, token *s
 	ORDER BY c.table_schema, c.table_name, c.ordinal_position)`)
 			continue
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iitables") {
-			token.SetValue(`(select t.table_name, t.table_schema as table_owner, null as create_date, null as alter_date,
-case t.table_type when 'VIEW' then 'V' else 'T' end as table_type,
--1 as num_rows, -1 as number_pages, '' as location_name from information_schema.tables t
-union
-select i.indexname as table_name, i.schemaname as table_owner, null as create_date, null as alter_date,
-'I' as table_type, -1 as num_rows, -1 as number_pages, '' as location_name from pg_indexes i)`)
+			token.SetValue(iitables)
 			continue
 		} else if token.Type == sqllexer.IDENT && token.EqualFold("iicolumns") {
-			token.SetValue(`(select c.table_name, c.table_schema as table_owner, c.column_name, case c.is_nullable when 'YES' then 'Y' else 'N' end as column_nulls,
-c.ordinal_position as column_sequence, c.data_type as column_datatype, c.character_maximum_length as column_length, c.numeric_scale as column_scale, 0 as key_sequence
-from information_schema.columns c)`)
+			token.SetValue(iicolumns)
+			continue
+		} else if token.Type == sqllexer.IDENT && token.EqualFold("iikey_columns") {
+			token.SetValue(iikey_columns)
 			continue
 		} else if token.Type == sqllexer.IDENT && strings.HasSuffix(strings.ToLower(token.Value), ".nextval") {
 			sequence := token.Value[0:(len(token.Value) - 8)]
