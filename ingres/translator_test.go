@@ -30,7 +30,7 @@ import (
 const TestProxyPort = 5432
 const TestDatabasePort = TestProxyPort + 1
 const TestDatabaseName = "ingres"
-const TestDatabaseEncoding = "fr_FR.UTF-8"
+const TestDatabaseEncoding = "C"
 const TestUsername = "user"
 const TestPassword = "pass"
 
@@ -246,8 +246,9 @@ func TestTranslations(t *testing.T) {
 
 		// Copy from missing file error test
 		_, err = sqlutils.DoExec(db, false, "COPY TABLE TABLE1 () FROM '"+TestMissingOutFile+"' with allocation = 4, row_estimate = 1091766")
-		if err == nil || !strings.Contains(err.Error(), "COPY from stdin failed: open "+TestMissingOutFile+": no such file or directory") {
-			t.Errorf("unexpected error while simulating copy fail mechanism")
+		if err == nil || !(strings.Contains(err.Error(), "COPY from stdin failed: open "+TestMissingOutFile+": no such file or directory") ||
+			!strings.Contains(err.Error(), "COPY from stdin failed: open "+TestMissingOutFile+": The system cannot find the file specified., when opening "+TestMissingOutFile)) {
+			t.Errorf("unexpected error while simulating copy fail mechanism: %s", err.Error())
 		}
 
 		sqlutils.AssertSqlQuery(t, db, "select table_name from iitables where table_owner = 'public' order by table_name", []string{"index1", "table1", "table2", "table3"})
