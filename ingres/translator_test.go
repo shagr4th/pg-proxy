@@ -35,6 +35,8 @@ const TestUsername = "user"
 const TestPassword = "pass"
 
 var TestCopyFile = filepath.Join(os.TempDir(), "pg-proxy.testcopy")
+var TestMissingOutFile = filepath.Join(os.TempDir(), "missing.file.out")
+var TestPsqlFile = filepath.Join(os.TempDir(), "psql.sql")
 
 const withStrictFixedChar = false
 
@@ -243,8 +245,8 @@ func TestTranslations(t *testing.T) {
 		sqlutils.AssertSqlExec(t, db, false, "COPY TABLE2 (COLUMN2 = colon with null('bouh')) FROM '"+TestCopyFile+"'", 2)
 
 		// Copy from missing file error test
-		_, err = sqlutils.DoExec(db, false, "COPY TABLE TABLE1 () FROM '/tmp/missing.file.out' with allocation = 4, row_estimate = 1091766")
-		if err == nil || !strings.Contains(err.Error(), "COPY from stdin failed: open /tmp/missing.file.out: no such file or directory") {
+		_, err = sqlutils.DoExec(db, false, "COPY TABLE TABLE1 () FROM '"+TestMissingOutFile+"' with allocation = 4, row_estimate = 1091766")
+		if err == nil || !strings.Contains(err.Error(), "COPY from stdin failed: open "+TestMissingOutFile+": no such file or directory") {
 			t.Errorf("unexpected error while simulating copy fail mechanism")
 		}
 
@@ -566,8 +568,8 @@ func isql(query string) (string, error) {
 }
 
 func psql(query string) (string, error) {
-	err := os.WriteFile("/tmp/psql.sql", []byte(query), 0666)
-	defer os.Remove("/tmp/psql.sql")
+	err := os.WriteFile(TestPsqlFile, []byte(query), 0666)
+	defer os.Remove(TestPsqlFile)
 	if err != nil {
 		return "", err
 	}
@@ -577,7 +579,7 @@ func psql(query string) (string, error) {
 		"-U", TestUsername,
 		"-p", fmt.Sprint(TestProxyPort), // fmt.Sprint(TestDatabasePort),
 		"-d", fmt.Sprintf("%s@localhost:%d", TestDatabaseName, TestDatabasePort), // TestDatabaseName,
-		"-f", "/tmp/psql.sql",
+		"-f", TestPsqlFile,
 	)
 	cmd.Env = append(os.Environ(), "PGPASSWORD="+TestPassword)
 	output, err := cmd.CombinedOutput()
