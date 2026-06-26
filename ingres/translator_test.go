@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime/pprof"
 	"schenker/pg-proxy/proxy"
 	"schenker/pg-proxy/sqlutils"
@@ -32,7 +33,8 @@ const TestDatabaseName = "ingres"
 const TestDatabaseEncoding = "fr_FR.UTF-8"
 const TestUsername = "user"
 const TestPassword = "pass"
-const TestCopyFile = "/tmp/pg-proxy.testcopy"
+
+var TestCopyFile = filepath.Join(os.TempDir(), "pg-proxy.testcopy")
 
 const withStrictFixedChar = false
 
